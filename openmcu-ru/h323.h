@@ -52,6 +52,7 @@ class MCUH323EndPoint : public H323EndPoint
     PString GetRoomStatus(const PString & block);
     PString GetRoomStatusJS();
     PString GetRoomStatusJSStart();
+	PString GetRoomStatusJson();
     MCUJSON* GetVideoMixerConfiguration(MCUVideoMixer * mixer, int number);
     MCUJSON* GetMemberDataJS(ConferenceMember * member);
     PString GetConferenceOptsJavascript(Conference & c);
@@ -59,7 +60,7 @@ class MCUH323EndPoint : public H323EndPoint
     PString GetAddressBookOptsJavascript();
     int SetMemberVideoMixer(Conference & conference, ConferenceMember * victim, int newVideoMixer);
     PString GetRoomList(const PString & block);
-    PString SetRoomParams(const PStringToString & data);
+    PString SetRoomParams(const PStringToString & data,PString & rdata);
     void UnmoderateConference(Conference & conference);
     PString RoomCtrlPage(const PString room);
     PString GetMonitorText();
@@ -244,6 +245,9 @@ class MCUH323Connection : public H323Connection
 
     virtual ConferenceMember * GetConferenceMember()
     { return conferenceMember; }
+
+    virtual void SetConferenceMember(ConferenceMember * member)
+    { conferenceMember = member; }
 
     virtual Conference * GetConference()
     { return conference; }
@@ -540,7 +544,9 @@ class MCUConnection_ConferenceMember : public ConferenceMember
       MCUH323Connection * conn = ep.FindConnectionWithLock(callToken);
       if (conn != NULL)
       {
-        conn->SendUserInput(str); 
+        if (conn->GetRemoteApplication().Find("MyPhone") != P_MAX_INDEX)
+          conn->SendUserInput(convert_utf8_to_cp1251(str));
+        else conn->SendUserInput(str); 
         conn->Unlock();
       }
     }
@@ -793,7 +799,7 @@ class ConnectionMonitor : public PThread
   PCLASSINFO(ConnectionMonitor, PThread);
   public:
     ConnectionMonitor(MCUH323EndPoint & _ep)
-      : PThread(10000, NoAutoDeleteThread), ep(_ep), monitorList(1024)
+      : PThread(10000, NoAutoDeleteThread), ep(_ep)
     {
       Resume();
     }

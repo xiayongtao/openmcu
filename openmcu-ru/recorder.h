@@ -1,3 +1,25 @@
+/*
+ * recorder.h
+ *
+ * Copyright (C) 2014-2015 Andrey Burbovskiy, OpenMCU-ru, All Rights Reserved
+ * Copyright (C) 2015 Konstantin Yeliseyev, OpenMCU-ru, All Rights Reserved
+ *
+ * The Initial Developer of the Original Code is Andrey Burbovskiy (andrewb@yandex.ru), All Rights Reserved
+ *
+ * The contents of this file are subject to the Mozilla Public License
+ * Version 1.0 (the "License"); you may not use this file except in
+ * compliance with the License. You may obtain a copy of the License at
+ * http://www.mozilla.org/MPL/
+ *
+ * Software distributed under the License is distributed on an "AS IS"
+ * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+ * the License for the specific language governing rights and limitations
+ * under the License.
+ *
+ * Contributor(s):  Andrey Burbovskiy (andrewb@yandex.ru)
+ *                  Konstantin Yeliseyev (kay27@bk.ru)
+ *
+ */
 
 #include "precompile.h"
 
@@ -16,17 +38,17 @@ static struct recorder_resolution {
   { 176,  144,  99   },
   { 320,  240,  300  },
   { 352,  288,  396  },
-  { 640,  360,  900  },
+  { 640,  360,  920  },
   { 640,  480,  1200 },
   { 704,  576,  1584 },
-  { 854,  480,  1601 },
+  { 854,  480,  1620 },
   { 800,  600,  1900 },
   { 1024, 768,  3072 },
   { 1280, 720,  3600 },
-  { 1366, 768,  4098 },
+  { 1366, 768,  4128 },
   { 1280, 1024, 5120 },
   { 1408, 1152, 6336 },
-  { 1920, 1080, 8100 },
+  { 1920, 1080, 8160 },
   { 0 }
 };
 

@@ -16,8 +16,13 @@ class MCUH323Connection;
 class MCUSipConnnection;
 class SipRTP_UDP;
 
+class CacheRTP;
+
 class MCUSimpleVideoMixer;
 class VideoMixPosition;
+class VideoFrameStore;
+class MCUBufferYUVArray;
+struct MCUSubtitles;
 
 class ConferenceAudioConnection;
 class ConferenceProfile;
@@ -49,6 +54,7 @@ class MCUSIP_RTP_UDP;
 class MCUSocket;
 class MCUListener;
 class MCUTelnetSession;
+class MCUJSON;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -503,6 +509,7 @@ class MCUURL : public PURL
       }
       else if(url_scheme == "rtsp")
       {
+        /*
         url_party = url_scheme+"://";
         if(username != "")
         {
@@ -515,6 +522,7 @@ class MCUURL : public PURL
         if(port != 0)
           url_party += ":"+PString(port);
         url_party += pathStr;
+        */
       }
       return url_party;
     }

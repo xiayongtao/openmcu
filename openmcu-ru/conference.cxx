@@ -23,6 +23,13 @@ const static struct audio_resolution {
   { 0 }
 };
 
+extern "C" {
+  unsigned char linear2ulaw(int pcm_val);
+  int ulaw2linear(unsigned char u_val);
+  unsigned char linear2alaw(int pcm_val);
+  int alaw2linear(unsigned char u_val);
+};
+        
 ////////////////////////////////////////////////////////////////////////////////////
 
 ConferenceManager::ConferenceManager()
@@ -594,9 +601,23 @@ int ConferenceMonitor::Perform(Conference * conference)
     }
   }
 
-  MCUVideoMixerList & videoMixerList = conference->GetVideoMixerList();
-  for(MCUVideoMixerList::shared_iterator it = videoMixerList.begin(); it != videoMixerList.end(); ++it)
-    it->Monitor(conference);
+  if(conference->UseSameVideoForAllMembers())
+  {
+    MCUVideoMixerList & videoMixerList = conference->GetVideoMixerList();
+    for(MCUVideoMixerList::shared_iterator it = videoMixerList.begin(); it != videoMixerList.end(); ++it)
+      it->Monitor(conference);
+  }
+  else
+  {
+    MCUMemberList & memberList = conference->GetMemberList();
+    for(MCUMemberList::shared_iterator it = memberList.begin(); it != memberList.end(); ++it)
+    {
+      ConferenceMember *member = it.GetObject();
+      if(member)
+        if(member->videoMixer)
+          member->videoMixer->Monitor(conference);
+    }
+  }
 
   return 0;
 }
@@ -614,6 +635,7 @@ Conference::Conference(ConferenceManager & _manager, long _listID,
   : manager(_manager), listID(_listID), guid(_guid), number(_number), name(_name)
 {
   stopping = FALSE;
+  enableSubtitles = 1;
   trace_section = "Conference "+number+": ";
 #if MCU_VIDEO
   if(mixer)
@@ -630,13 +652,15 @@ Conference::Conference(ConferenceManager & _manager, long _listID,
   muteUnvisible = FALSE;
   VAdelay = 1000;
   VAtimeout = 10000;
-  VAlevel = 100;
+  VAlevel = 20;
   echoLevel = 0;
   conferenceRecorder = NULL;
   forceScreenSplit = GetConferenceParam(number, ForceSplitVideoKey, TRUE);
   lockedTemplate = GetConferenceParam(number, LockTemplateKey, FALSE);
+  muteNewUsers = FALSE;
   pipeMember = NULL;
   dialCountdown = OpenMCU::Current().autoDialDelay;
+  SetMasterVolumeDB(0);
   PTRACE(3, "Conference\tNew conference started: ID=" << guid << ", number = " << number);
 }
 
@@ -801,6 +825,13 @@ BOOL Conference::AddMember(ConferenceMember * memberToAdd, BOOL addToList)
   if(AddMemberToList(memberToAdd, addToList) == memberList.end())
     return FALSE;
 
+  { // restore input & output gain level
+    PString gain = GetSectionParamFromUrl("Input Gain", MCUURL(memberToAdd->GetName()).GetUrl(), false);
+    if(!gain.IsEmpty()) memberToAdd->SetGainDB(gain.AsInteger());
+    gain = GetSectionParamFromUrl("Output Gain", MCUURL(memberToAdd->GetName()).GetUrl(), false);
+    if(!gain.IsEmpty()){  memberToAdd->kOutputGainDB = gain.AsInteger();   memberToAdd->kOutputGain=(float)pow(10.0,((float)memberToAdd->kOutputGainDB)/20.0);  }
+  }
+  
   // nothing more!
   if(!memberToAdd->IsVisible())
     return TRUE;
@@ -859,6 +890,9 @@ BOOL Conference::AddMember(ConferenceMember * memberToAdd, BOOL addToList)
   // trigger H245 thread for join message
   //new NotifyH245Thread(*this, TRUE, memberToAdd);
 
+  if (muteNewUsers)
+    memberToAdd->SetChannelPauses(1);
+
   return TRUE;
 }
 
@@ -893,9 +927,10 @@ BOOL Conference::RemoveMember(ConferenceMember * memberToRemove, BOOL removeFrom
   if(!memberToRemove->IsVisible())
     return TRUE;
 
+  visibleMemberCount--;
+
   // counter members
-  if(memberToRemove->IsOnline())
-    onlineMemberCount--;
+  if(memberToRemove->IsOnline()) onlineMemberCount--;
 
   // remove ConferenceConnection
   RemoveAudioConnection(memberToRemove);
@@ -904,7 +939,6 @@ BOOL Conference::RemoveMember(ConferenceMember * memberToRemove, BOOL removeFrom
   {
     if(moderated == FALSE || number == "testroom")
     {
-      visibleMemberCount--;
       MCUSimpleVideoMixer *mixer = manager.GetVideoMixerWithLock(this);
       mixer->RemoveVideoSource(memberToRemove->GetID(), *memberToRemove);
       mixer->Unlock();
@@ -914,7 +948,28 @@ BOOL Conference::RemoveMember(ConferenceMember * memberToRemove, BOOL removeFrom
       for(MCUVideoMixerList::shared_iterator it = videoMixerList.begin(); it != videoMixerList.end(); ++it)
       {
         MCUSimpleVideoMixer *mixer = it.GetObject();
-        mixer->SetOffline(memberToRemove->GetID());
+        ConferenceMemberId mtrid = memberToRemove->GetID();
+
+        BOOL replaced = FALSE; int n = mixer->GetPositionNum(mtrid), type = mixer->GetPositionType(mtrid);
+
+        if(n >=0 && (type == 2 || type == 3)) // VAD position - put someone there
+        {
+          for(MCUMemberList::shared_iterator it = memberList.begin(); it != memberList.end(); ++it)
+          {
+            ConferenceMember * member = *it; if(member->IsVisible() && member->IsOnline())
+            {
+              if(mixer->VMPFind(member->GetID()) == mixer->vmpList.end() && (!member->disableVAD))
+              {
+                mixer->PositionSetup(n, type, member);
+                member->SetFreezeVideo(FALSE);
+                replaced = TRUE;
+              }
+            }
+          }
+        }
+
+        if(!replaced) mixer->SetOffline(mtrid);
+
       }
     }
   }
@@ -1029,17 +1084,14 @@ void Conference::WriteMemberAudioLevel(ConferenceMember * member, int audioLevel
 #if MCU_VIDEO
   if(UseSameVideoForAllMembers())
   {
-    if(audioLevel > VAlevel)
-      member->vad += tint;
-    else
-      member->vad = 0;
+    if(member->inTalkBurst) member->vad += tint; else member->vad = 0;
 
     BOOL resetMemberVad = FALSE;
     for(MCUVideoMixerList::shared_iterator it = videoMixerList.begin(); it != videoMixerList.end(); ++it)
     {
       MCUSimpleVideoMixer *mixer = it.GetObject();
       int silenceCounter = mixer->GetSilenceCounter(member->GetID());
-      if(audioLevel > VAlevel) // we have a signal
+      if(member->inTalkBurst) // we have a signal
       {
         if(member->vad >= VAdelay) // voice-on trigger delay
         {
@@ -1065,7 +1117,7 @@ void Conference::WriteMemberAudioLevel(ConferenceMember * member, int audioLevel
       {
         if(silenceCounter >= 0) mixer->IncreaseSilenceCounter(member->GetID(),tint);
       }
-      if(audioLevel > VAlevel && silenceCounter == 0 && member->disableVAD == FALSE && member->vad-VAdelay > 500)
+      if(member->inTalkBurst && silenceCounter == 0 && member->disableVAD == FALSE && member->vad-VAdelay > 500)
         resetMemberVad = TRUE;
     }
     if(resetMemberVad)
@@ -1273,6 +1325,75 @@ void Conference::UpdateVideoMixOptions(ConferenceMember * member)
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+void Conference::RemoveFromVideoMixers(ConferenceMember * member)
+{
+  if(!member) return; ConferenceMemberId id = member->GetID();
+  if(!member->IsSystem()) member->SetFreezeVideo(TRUE);
+  if(videoMixerList.GetSize() != 0)
+    for(MCUVideoMixerList::shared_iterator it = videoMixerList.begin(); it != videoMixerList.end(); ++it)
+    {
+      MCUSimpleVideoMixer *mixer = it.GetObject();
+      int oldPos = mixer->GetPositionNum(id);
+      if(oldPos != -1) mixer->MyRemoveVideoSource(oldPos, (mixer->GetPositionType(id) & 2) != 2);
+    }
+  else // classic MCU mode
+    for(MCUMemberList::shared_iterator it = memberList.begin(); it != memberList.end(); ++it)
+    {
+      ConferenceMember * member = *it;
+      MCUVideoMixer * mixer = member->videoMixer;
+      ConferenceMemberId id = member->GetID();
+      int oldPos = mixer->GetPositionNum(id);
+      if(oldPos != -1) mixer->MyRemoveVideoSource(oldPos, (mixer->GetPositionType(id) & 2) != 2);
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+BOOL Conference::SetMasterVolumeDB(int n)
+{
+  if((n < -40) || (n > 40)) return FALSE;
+  masterVolumeMultiplier  = (float)pow(10.0,((float)n)/20.0);
+  masterVolumeDB          = n;
+  masterVolumeMultiplier *= 0.636619; // avg. level of sine
+  return TRUE;
+}
+
+void Conference::EnableSubtitles(int enable)
+{
+  enableSubtitles = enable;
+  if(UseSameVideoForAllMembers())
+  {
+    for(MCUVideoMixerList::shared_iterator it = videoMixerList.begin(); it != videoMixerList.end(); ++it)
+    {
+      MCUSimpleVideoMixer *mixer = it.GetObject();
+      if(mixer)
+      {
+        if(enable)
+          mixer->EnableSubtitles();
+        else
+          mixer->DisableSubtitles();
+      }
+    }
+  }
+  else
+  {
+    for(MCUMemberList::shared_iterator it = memberList.begin(); it != memberList.end(); ++it)
+    {
+      ConferenceMember *member = it.GetObject();
+      if(member)
+      {
+        if(member->videoMixer)
+        {
+          if(enable) member->videoMixer->EnableSubtitles();
+          else       member->videoMixer->DisableSubtitles();
+        }
+      }
+    }
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
 ConferenceMember::ConferenceMember(Conference * _conference)
   : conference(_conference)
 {
@@ -1286,8 +1407,7 @@ ConferenceMember::ConferenceMember(Conference * _conference)
   previousAudioLevel = 65535;
   audioLevelIndicator = 0;
   currVolCoef = 1.0;
-  kManualGain = 1.0; kManualGainDB = 0;
-  kOutputGain = 1.0; kOutputGainDB = 0;
+  SetGainDB(0); kOutputGain = 1.0; kOutputGainDB = 0;
   memberIsJoined = FALSE;
 
 #if MCU_VIDEO
@@ -1312,6 +1432,18 @@ ConferenceMember::ConferenceMember(Conference * _conference)
   write_audio_time_microseconds=0;
   write_audio_average_level=0;
   write_audio_write_counter=0;
+  inTalkBurst = FALSE;
+  avgLevel = maxLevel = silenceDetectorFrameCounter = signalDetectorThreshold = 0;
+  silenceDeadbandFrames = 2;
+  signalDeadbandFrames = 2;
+  signalMinimum = UINT_MAX;
+  silenceMaximum = 0;
+  signalFramesReceived = 0;
+  silenceFramesReceived = 0;
+  oldMasterVolumeDB = conference->GetMasterVolumeDB();
+  oldMasterVolumeMultiplier = conference->GetMasterVolumeMultiplier();
+  gainNeverCorrected = 1; // initial volume correction
+  overloadCounter = 1;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1441,7 +1573,7 @@ void ConferenceMember::SendRoomControl(int state)
 
 MCUJSON * ConferenceMember::AsJSON(int state)
 {
-  MCUJSON *json = new MCUJSON(MCUJSON::JSON_ARRAY);
+  MCUJSON *json = new MCUJSON(MCUJSON::JSON_OBJECT);
   json->Insert("online", (state && IsOnline()));
   json->Insert("id", id);
   json->Insert("name", name);
@@ -1454,7 +1586,18 @@ MCUJSON * ConferenceMember::AsJSON(int state)
   json->Insert("channelMask", channelMask);
   json->Insert("kManualGainDB", kManualGainDB);
   json->Insert("kOutputGainDB", kOutputGainDB);
-  json->Insert("mixer", "[]");
+
+ 
+  MCUVideoMixerList & videoMixerList = conference->GetVideoMixerList();
+   MCUSimpleVideoMixer *mixer = videoMixerList[0];
+  if(mixer)
+  {
+  json->Insert("mixerCount", videoMixerList.GetSize());
+  json->Insert("mixer", mixer->GetLayout());
+  json->Insert("winId",mixer->GetPositionNum(id));
+  }
+
+
   json->Insert("memberType", memberType);
   json->Insert("autoDial", autoDial);
   return json;
@@ -1479,98 +1622,208 @@ void ConferenceMember::ChannelStateUpdate(unsigned bit, BOOL state)
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-void ConferenceMember::WriteAudioAutoGainControl(const short * pcm, unsigned samplesPerFrame,
-  unsigned codecChannels, unsigned sampleRate,
-  unsigned level, float* currVolCoef, unsigned* signalLevel, float kManual)
+void ConferenceMember::Gain(const short * pcm, unsigned samplesPerFrame, unsigned codecChannels, unsigned sampleRate)
 {
   unsigned samplesCount = samplesPerFrame*codecChannels;
-  if(!samplesCount) return;
+  if(!samplesCount) return;        // empty buffer - nothing to do
 
-  const short * end = pcm + samplesCount;
-  short *buf = (short*)pcm;
-  int c_max_vol = 0, c_avg_vol = 0;
-  while (pcm != end) 
+  short * buf = (short*)pcm;
+
+  float   mVol      = conference->GetMasterVolumeMultiplier();
+  float & cvc       = currVolCoef;
+  float   vc0       = cvc;
+
+  float maxChangeDB = (float)1.2 * ((float)samplesPerFrame / (float)sampleRate) / overloadCounter;
+  if(maxChangeDB > 10.0     ) maxChangeDB = 10.0    ;
+  if(maxChangeDB <  0.00001 ) maxChangeDB =  0.00001;
+
+  BOOL masterVolumeChanged = (oldMasterVolumeDB != conference->GetMasterVolumeDB());
+  if(masterVolumeChanged)
   {
-    if (*pcm < 0) 
-    { if(-*pcm > c_max_vol) c_max_vol = -*pcm; c_avg_vol -= *pcm++; }
-    else 
-    { if( *pcm > c_max_vol) c_max_vol =  *pcm; c_avg_vol += *pcm++; }
+    cvc *= mVol / oldMasterVolumeMultiplier;
+    oldMasterVolumeDB         = conference->GetMasterVolumeDB();
+    oldMasterVolumeMultiplier = mVol;
   }
-  c_avg_vol /= samplesPerFrame;
 
-  if(!level)
+  if(maxLevel*cvc >= constOverload*mVol) // overload
   {
-    *signalLevel = c_avg_vol;
+    cvc = constOverload*mVol / maxLevel;
+    overloadCounter++; if(overloadCounter>99) overloadCounter=99;
+  }
+  else if(inTalkBurst && (avgLevel*cvc < constGood*mVol)) // amplify
+  {
+    if(gainNeverCorrected && (avgLevel>299) && (maxLevel>599))
+    {
+      cvc = constGood*mVol / maxLevel; // 1st time correction might be big
+      gainNeverCorrected = 0;
+    }
+    else cvc *= pow(10.0,maxChangeDB/20.0);
+    if(maxLevel*cvc > constGoodCheck*mVol) // overload
+    {
+      cvc = constGoodCheck*mVol / maxLevel;
+      overloadCounter++; if(overloadCounter>99) overloadCounter=99;
+    }
+  }
+  else
+  {
+    if( (!masterVolumeChanged) && ((vc0<0.994)||(vc0>1.005)) ) for(unsigned i=0; i<samplesCount; i++) 
+    {
+      int v = buf[i];
+      v=(int)(v*vc0);
+      if(v > 32767) buf[i]=32767;
+      else if(v < -32768) buf[i]=-32768;
+      else buf[i] = (short)v;
+    }
     return;
   }
 
-  float   max_vol = (float)23170.0 * kManual;
-  float   overload = 32768 * kManual;
-  float   inc_vol = (float)0.05*(float)8000.0/sampleRate;
-  float & cvc = *currVolCoef;
-  float   vc0= cvc;
-  
-  unsigned wLevel; // AGC level
-//  wLevel = (unsigned)((float)(level*10)/kManual); //worst result
-  if(kManual>10) wLevel = (unsigned)((float)(level*10)/kManual);
-  else wLevel=level;
-
-  if((unsigned)c_avg_vol > wLevel) // signal detected
-  {
-    if(c_max_vol*cvc >= overload) // overload
-      cvc = overload / c_max_vol;
-    else
-    if(c_max_vol*cvc < max_vol) // ++ amplification
-      cvc += inc_vol;
-  }
-  else // no signal (just a noise) but check it for overload for safety reason
-  {
-    if(c_max_vol*cvc >= overload) // overload
-      cvc = (float)overload / c_max_vol;
-  }
-  *signalLevel = (unsigned)((float)c_avg_vol*cvc);
-
-  float delta0=(cvc-vc0)/samplesCount;
+  float delta0 = pow(cvc/vc0, 1.0/(float)samplesCount);
 
   for(unsigned i=0; i<samplesCount; i++) 
   {
     int v = buf[i];
-    v=(int)(v*vc0);
+    v=(int)(v*vc0*kManualGain);
     if(v > 32767) buf[i]=32767;
     else if(v < -32768) buf[i]=-32768;
     else buf[i] = (short)v;
-    vc0+=delta0;
+    vc0*=delta0;
   }
+  PTRACE(6, "AGC\tname=" << name << " spf=" << samplesPerFrame << " cs=" << codecChannels << " sr=" << sampleRate << " level=" << avgLevel << "/" << maxLevel << " cvc=" << cvc << " kM=" << kManualGain << " delta0=" << delta0 << " ovr=" << constOverload << " good=" << constGood << " maxChngDB=" << maxChangeDB);
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+BOOL ConferenceMember::DetectSilence(unsigned level, int tint)
+{
+  // Convert to a logarithmic scale - use uLaw which is complemented
+  level = linear2ulaw(level) ^ 0xff;
+  unsigned short int & VAlevel = conference->VAlevel;
+
+  // Now if signal level above threshold we are "talking"
+  BOOL haveSignal = (signalDetectorThreshold && (level > signalDetectorThreshold));
+
+  if(inTalkBurst == haveSignal) silenceDetectorFrameCounter = 0; // If no change ie still talking or still silent, reset frame counter
+  else if((++silenceDetectorFrameCounter) >= (inTalkBurst ? silenceDeadbandFrames : signalDeadbandFrames))
+  {
+    inTalkBurst = !inTalkBurst; // Have had enough consecutive frames talking/silent, swap modes.
+    PTRACE(5, "ConferenceMember\tSilence detector transition: " << (inTalkBurst ? "Talk" : "Silent") << " avg/thrs=" << level << "/" << signalDetectorThreshold);
+
+    signalMinimum = UINT_MAX; silenceMaximum = 0; signalFramesReceived = 0; silenceFramesReceived = 0; // Restart adaptive threshold measurements
+  }
+
+  if(signalDetectorThreshold == 0)
+  {
+    if(level > 1)
+    {
+      // Bootstrap condition, use first frame level as silence level
+      signalDetectorThreshold = PMIN(level, VAlevel);
+      PTRACE(5, "Codec\tSilence detection threshold initialised to: " << signalDetectorThreshold);
+    }
+    return TRUE; // inTalkBurst always FALSE here, so return silent
+  }
+
+  // Count the number of silent and signal frames and calculate min/max
+  if(haveSignal)
+  {
+    if (level < signalMinimum) signalMinimum = level;
+    signalFramesReceived++;
+  } else {
+    if (level > silenceMaximum) silenceMaximum = level;
+    silenceFramesReceived++;
+  }
+
+  // See if we have had enough frames to look at proportions of silence/signal
+//  unsigned atff = (unsigned)(((unsigned long)adaptiveThresholdFrames) * sampleRate * channels / 8000);
+  unsigned atff = 7;
+  if((signalFramesReceived + silenceFramesReceived) > atff)
+  {
+    // Now we have had a period of time to look at some average values we can
+    //  make some adjustments to the threshold. There are four cases:
+    if(signalFramesReceived >= atff)
+    {
+      // If every frame was noisy, move threshold up. Don't want to move too
+      // fast so only go a quarter of the way to minimum signal value over the
+      // period. This avoids oscillations, and time will continue to make the
+      // level go up if there really is a lot of background noise.
+      int delta = (signalMinimum - signalDetectorThreshold)/4;
+      if(delta != 0)
+      {
+        signalDetectorThreshold += delta;
+        if(signalDetectorThreshold > VAlevel) signalDetectorThreshold=VAlevel;
+        PTRACE(5, "Codec\tSilence detection threshold increased to: " << signalDetectorThreshold);
+      }
+    }
+    else if (silenceFramesReceived >= atff)
+    {
+      // If every frame was silent, move threshold down. Again do not want to
+      // move too quickly, but we do want it to move faster down than up, so
+      // move to halfway to maximum value of the quiet period. As a rule the
+      // lower the threshold the better as it would improve response time to
+      // the start of a talk burst.
+      unsigned newThreshold = (signalDetectorThreshold + silenceMaximum)/2 + 1;
+      if(signalDetectorThreshold > newThreshold)
+      {
+        signalDetectorThreshold = PMIN(newThreshold, VAlevel);
+        PTRACE(5, "Codec\tSilence detection threshold decreased to: " << signalDetectorThreshold);
+      }
+    }
+    else if (signalFramesReceived > silenceFramesReceived)
+    {
+      // We haven't got a definitive silent or signal period, but if we are
+      // constantly hovering at the threshold and have more signal than
+      // silence we should creep up a bit.
+      signalDetectorThreshold++;
+      PTRACE(5, "Codec\tSilence detection threshold incremented to: " << signalDetectorThreshold
+               << " signal=" << signalFramesReceived << ' ' << signalMinimum
+               << " silence=" << silenceFramesReceived << ' ' << silenceMaximum);
+    }
+    signalMinimum = UINT_MAX; silenceMaximum = 0; signalFramesReceived = 0; silenceFramesReceived = 0;
+  }
+  return !inTalkBurst;
+
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 void ConferenceMember::WriteAudio(const uint64_t & timestamp, const void * buffer, PINDEX amount, unsigned sampleRate, unsigned channels)
 {
-  if(conference != NULL)
-  {
-    // Автоматическая регулировка усиления
-    // calculate average signal level for this member
-    unsigned signalLevel=0;
-    WriteAudioAutoGainControl((short*) buffer, amount/channels/2, channels, sampleRate, 900, &currVolCoef, &signalLevel, kManualGain);
-    audioLevel = ((signalLevel * 2) + audioLevel) / 3;
+  if(conference == NULL) return;
 
-    // Записать аудио в буфер // Write to buffer
-    conference->WriteMemberAudio(this, timestamp, buffer, amount, sampleRate, channels);
-
-
-    // Индикатор уровня, VAD // Level indication, VAD
-#   define MINIMUM_VAD_INTERVAL_MS 250
-    write_audio_time_microseconds += amount*1000000/2/channels/sampleRate;
-    write_audio_average_level += audioLevel;
-    write_audio_write_counter++;
-    if(write_audio_time_microseconds >= MINIMUM_VAD_INTERVAL_MS * 1000)
+  { // set avgLevel & maxLevel
+    unsigned      samplesCount = amount/2;
+    short       * pcm = (short*)buffer;
+    const short * end = pcm + samplesCount;
+    int           c_max_vol=0,
+                  c_avg_vol=0;
+    while (pcm != end)
     {
-      conference->WriteMemberAudioLevel(this, write_audio_average_level/write_audio_write_counter, write_audio_time_microseconds/1000);
-      write_audio_average_level = 0;
-      write_audio_time_microseconds = 0;
-      write_audio_write_counter = 0;
+      short v=*pcm++;   if(v== -0x8000) v=0x7fff;   if(v<0)v= -v;
+      if(v > c_max_vol) c_max_vol=v;
+      c_avg_vol += v;
     }
+    c_avg_vol /= samplesCount;       // avg. volume of all channels
+    avgLevel   = (unsigned)c_avg_vol;
+    maxLevel   = (unsigned)c_max_vol;
+  }
+
+//  unsigned adaptiveThresholdFrames = (unsigned)(10 * sampleRate * channels / 8000);
+
+
+  Gain((short*) buffer, amount/channels/2, channels, sampleRate);
+  conference->WriteMemberAudio(this, timestamp, buffer, amount, sampleRate, channels);
+
+  // For voice level indication
+# define MINIMUM_VAD_INTERVAL_MS 250
+  write_audio_time_microseconds += amount*1000000/2/channels/sampleRate;
+  write_audio_average_level += avgLevel;
+  write_audio_write_counter++;
+  if(write_audio_time_microseconds >= MINIMUM_VAD_INTERVAL_MS * 1000)
+  {
+    DetectSilence(write_audio_average_level/write_audio_write_counter, write_audio_time_microseconds/1000);
+    conference->WriteMemberAudioLevel(this, (int)((float)write_audio_average_level/write_audio_write_counter*currVolCoef), write_audio_time_microseconds/1000);
+    write_audio_average_level = 0;
+    write_audio_time_microseconds = 0;
+    write_audio_write_counter = 0;
   }
 }
 
@@ -1677,6 +1930,18 @@ void ConferenceMember::RemoveVideoSource(ConferenceMemberId id, ConferenceMember
 PString ConferenceMember::GetMonitorInfo(const PString & /*hdr*/)
 { 
   return PString::Empty(); 
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+void ConferenceMember::SetGainDB(int newGainLevelDB)
+{
+  kManualGainDB  = newGainLevelDB;
+  kManualGain    = (float)pow(10.0,((float)kManualGainDB)/20.0);
+//  constOverload  = 32768.0 * 1.05 * kManualGain;
+  constOverload  = 32768.0 * 1.05;
+  constGood      = constOverload * 0.67;
+  constGoodCheck = constOverload * 0.73;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

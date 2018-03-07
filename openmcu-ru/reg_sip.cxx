@@ -1,3 +1,26 @@
+/*
+ * reg_sip.cxx
+ *
+ * Copyright (C) 2014-2015 Andrey Burbovskiy, OpenMCU-ru, All Rights Reserved
+ * Copyright (C) 2014 Konstantin Yeliseyev, OpenMCU-ru, All Rights Reserved
+ *
+ * The Initial Developer of the Original Code is Andrey Burbovskiy (andrewb@yandex.ru), All Rights Reserved
+ *
+ * The contents of this file are subject to the Mozilla Public License
+ * Version 1.0 (the "License"); you may not use this file except in
+ * compliance with the License. You may obtain a copy of the License at
+ * http://www.mozilla.org/MPL/
+ *
+ * Software distributed under the License is distributed on an "AS IS"
+ * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+ * the License for the specific language governing rights and limitations
+ * under the License.
+ *
+ * Contributor(s):  Andrey Burbovskiy (andrewb@yandex.ru)
+ *                  Konstantin Yeliseyev (kay27@bk.ru)
+ *
+ */
+
 
 #include "precompile.h"
 #include "mcu.h"
@@ -246,9 +269,15 @@ int Registrar::OnReceivedSipInvite(const msg_t *msg)
     if(raccount_out) raccount_out->Unlock();
     if(rconn) rconn->Unlock();
     if(response_code == 0)
+    {
+		msg_destroy(msg_reply);
       return 0;
+	}
     else if(response_code == -1)
+    {
       sep->CreateIncomingConnection(msg); // MCU call
+		msg_destroy(msg_reply);
+	}
     else
       sep->SipReqReply(msg, msg_reply, response_code);
     return 1;
@@ -533,7 +562,7 @@ BOOL Registrar::SipSendMessage(RegistrarAccount *raccount_in, RegistrarAccount *
 
   sip_cseq_t *sip_cseq = sip_cseq_create(GetHome(), 1, SIP_METHOD_MESSAGE);
   sip_request_t *sip_rq = sip_request_create(GetHome(), SIP_METHOD_MESSAGE, URL_STRING_MAKE((const char *)raccount_out->GetUrl()), NULL);
-  sip_call_id_t* sip_call_id = sip_call_id_create(GetHome(), "");
+  sip_call_id_t* sip_call_id = sip_call_id_create(GetHome(), NULL);
 
   sip_route_t* sip_route = NULL;
   if(raccount_out->registered)

@@ -18,7 +18,7 @@ var MIXER_LAYOUT_SCROLL_LEFT_STYLE="line-height:10px;font-weight:bold;color:#fff
 var MIXER_LAYOUT_SCROLL_RIGHT_STYLE=MIXER_LAYOUT_SCROLL_LEFT_STYLE;
 var MIXER_LAYOUT_SCROLL_LEFT_BUTTON="&#9668;";
 var MIXER_LAYOUT_SCROLL_RIGHT_BUTTON="&#9658;";
-var VAD_FIELD_STYLE="width:40px;background-color:#fce;border-radius:5px;color:blue;font-weight:bold";
+var VAD_FIELD_STYLE="width:40px;background-color:#fce;border-radius:5px;color:blue;font-weight:bold;text-align:right";
 var MIX_BORDER_COLOR='#5ce';
 
 
@@ -52,10 +52,11 @@ var OTFC_CHANGE_RESIZER_RULE     = 27;
 var OTFC_INVITE                  = 32;
 var OTFC_REMOVE_OFFLINE_MEMBER   = 33;
 var OTFC_DIAL                    = 34;
+var OTFC_CHAT                    = 35;
 var OTFC_DROP_ALL_ACTIVE_MEMBERS = 64;
 var OTFC_INVITE_ALL_INACT_MMBRS  = 65;
 var OTFC_REMOVE_ALL_INACT_MMBRS  = 66;
-var OTFC_YUV_FILTER_MODE         = 68;
+var OTFC_ENABLE_SUBTITLES        = 68;
 var OTFC_TAKE_CONTROL            = 69;
 var OTFC_DECONTROL               = 70;
 var OTFC_ADD_VIDEO_MIXER         = 71;
@@ -68,12 +69,16 @@ var OTFC_TOGGLE_TPL_LOCK         = 77;
 var OTFC_UNMUTE_ALL              = 78;
 var OTFC_AUDIO_GAIN_LEVEL_SET    = 79;
 var OTFC_OUTPUT_GAIN_SET         = 80;
+var OTFC_SET_MASTER_VOLUME       = 81;
 var OTFC_ADD_TO_ABOOK            = 90;
 var OTFC_REMOVE_FROM_ABOOK       = 91;
+var OTFC_MUTE_NEW_USERS          = 92;
+var OTFC_UNMUTE_NEW_USERS        = 93;
 
 var mmw = -1; // build_page() initializer
 var visible_ids='';
 var mixers=0, bfw=704, bfh=576, room='';
+var log_width=200;
 
 var mixer_refresh_timer = null;
 
@@ -126,6 +131,17 @@ var roomName, globalMute, isModerated;
 var classicMode = false;
 
 var sortMode = parseInt(getcookie('sortMode')); if(sortMode!=0) sortMode=1;
+
+var muteNewUsers = 0;
+var enableSubtitles = 1;
+
+var masterVolume = 40, slidermove = 0, slidervalue, sliderstartx, slidertemp;
+
+function resize_timing(s)
+{
+  if(document.getElementById('ScaleTiming')) document.getElementById('ScaleTiming').innerHTML=Math.floor(s/1000);
+  alive();
+}
 
 function index_exists(a, i)
 {
@@ -302,7 +318,7 @@ function start_otf_control()
   var cmd='room='+encodeURIComponent(roomName)
     + '&otfc=1'
     + '&action='+data[0]
-    + '&v='+data[1];
+    + '&v='+encodeURIComponent(data[1]);
   if(2 in data) cmd+='&o='+encodeURIComponent(data[2]);
   if(3 in data) cmd+='&o2='+encodeURIComponent(data[3]);
   if(4 in data) cmd+='&o3='+encodeURIComponent(data[4]);
@@ -311,8 +327,8 @@ function start_otf_control()
   cro_otf=createRequestObject();
   cro_otf.open('POST','Select',true);
   cro_otf.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-  cro_otf.setRequestHeader("Content-length", cmd.length);
-  cro_otf.setRequestHeader("Connection", "close");
+//  cro_otf.setRequestHeader("Content-length", cmd.length);
+//  cro_otf.setRequestHeader("Connection", "close");
   cro_otf.onreadystatechange=otf_result;
   cro_otf.send(cmd);
   dmsg('Sent');
@@ -395,7 +411,9 @@ function vadoptions(obj,mid)
 
 function checking_failed(){
   check_alive=0;
-  if(!iframe_reconnection){
+  if(!iframe_reconnection)
+  {
+    remove_chat();
     var ifr=document.getElementById('loggingframe');
     var doc=ifr.contentWindow.document.open('text/html','replace');
     doc.write('<body style="font-face:Verdana,Arial;color:red;font-size:10px;font-weight:bold">Connection dropped :(<br>Trying to reconnect...');
@@ -407,10 +425,12 @@ function checking_failed(){
 function reconnect_iframe(){
   iframe_reconnection=1;
   var ifr=document.getElementById('loggingframe');
-  try{
-  document.getElementById('logging1').removeChild(ifr);
-  document.getElementById('logging1').innerHTML=link_was_lost;
-  check_alive=setTimeout(checking_failed,5500);
+  try
+  {
+    document.getElementById('logging1').removeChild(ifr);
+    document.getElementById('logging1').innerHTML=link_was_lost;
+    add_chat();
+    check_alive=setTimeout(checking_failed,5500);
   } catch(e){ location.href=location.href; }
 }
 
@@ -564,7 +584,7 @@ function invite_checked_abook(obj){
     {
       if(check_box.checked)
       {
-        inviteoffline(document.getElementById('abook_inv_'+addressbook[i][1]),encodeURIComponent(addressbook[i][2]),1);
+        inviteoffline(document.getElementById('abook_inv_'+addressbook[i][1]),addressbook[i][2],1);
         check_box.checked = false;
       }
     }
@@ -847,7 +867,7 @@ function format_mmbr_button(m,st)
   var mute4=mute_button(m, st, 4);
   var mute8=mute_button(m, st, 8);
   var vad=vad_button(m);
-  kick   ="<img "+b1style+" src='i16_close_red.png' onclick='kick_confirm(this,"+m[1]+",\""+encodeURIComponent(m[2])+"\");' onmouseover='prvnt=1' onmouseout='prvnt=0' alt='Drop'>";
+  kick   ="<img "+b1style+" src='i16_close_red.png' onclick='kick_confirm(this,"+m[1]+",\""+m[2]+"\");' onmouseover='prvnt=1' onmouseout='prvnt=0' alt='Drop'>";
   hide   ="<div class='hidespr'" + prCode + " title='Remove from video mixers' onclick='if(checkcontrol())queue_otf_request("+OTFC_REMOVE_FROM_VIDEOMIXERS+","+m[1]+")'></div>";
   resize ="<div id='rsz_"+id+"' class='rszspr" + m[15] + "'" + prCode + " title='&laquo;&raquo;/&uArr;&dArr;' onclick='this.className=\"launchspr\";queue_otf_request("+OTFC_CHANGE_RESIZER_RULE+","+m[1]+")'></div>";
   kdb    ="<div "+b2style+" id='agl_"+id+"' class='kdb'" + prCode + " onclick='javascript:{gain_selector(this,"+m[1]+"  );return false;}'>"+nice_db(m[10])+"</div>";
@@ -856,8 +876,7 @@ function format_mmbr_button(m,st)
   levelb ="<div "+b4style+" class='"+((m[9]&16)?"mutespr10":"vlevel")+"' id='srpan_"+id+"'>&nbsp;</div>";
   var autoDial=m[14], adspr="adspr"+(st?"1":"0")+(m[14]?"1":"0");
   var invite = "<div" + prCode + " onclick='this.className=\"launchspr\";queue_otf_request(" + OTFC_DIAL + "," + m[1] + ")' id='dial_"+id+"' class='"+adspr+"'></div>";
-  remove ="<img"+prCode+" "+b1style+" onclick='removeoffline(this,\""+encodeURIComponent(m[2])+"\")' src='i16_close_gray.png' alt='Remove' title='"+l_room_remove_from_list+"'>";
-
+  remove ="<img"+prCode+" "+b1style+" onclick='removeoffline(this,\""+m[2].replace('"','\\x22')+"\")' src='i16_close_gray.png' alt='Remove' title='"+l_room_remove_from_list+"'>";
   s+=dpre+"2px'><div class='mmbrname' "+namestyle+">"+uname+"</div></div>";
   s+=dpre2+"2px'><div class='mmbrip' "+namestyle+">"+ip+"</div></div>";
 
@@ -956,9 +975,9 @@ function format_mmbr_abook(num,mmbr)
 
   var save_icon = "";
   if(!is_abook)
-    save_icon = "<img src='i16_abook_plus.png' style='cursor:pointer' onclick='add_to_abook(this,\""+encodeURIComponent(mmbr[2])+"\")' title='"+window.l_add_to_abook+"' >";
+    save_icon = "<img src='i16_abook_plus.png' style='cursor:pointer' onclick='add_to_abook(this,\""+mmbr[2]+"\")' title='"+window.l_add_to_abook+"' >";
   else if(is_abook && abook_list_display == 1)
-    save_icon = "<img src='i16_close_gray.png' style='cursor:pointer' onclick='remove_from_abook(this,\""+encodeURIComponent(mmbr[2])+"\")' title='"+window.l_delete+"' >";
+    save_icon = "<img src='i16_close_gray.png' style='cursor:pointer' onclick='remove_from_abook(this,\""+mmbr[2]+"\")' title='"+window.l_delete+"' >";
 
   var ip_decor = "";
   if(!is_saved_account && abook_list_display == 2)
@@ -1551,7 +1570,7 @@ function top_panel()
 
   var title;
   
-  var c="<table width='100%'><tr><td width='70%'>";
+  var c="<table width='100%'><tr><td width='60%'>";
   c+="<form style='margin:0px;margin-left:8px;padding:0px' name='FakeForm1'>";
 
   var who='robot'; if(isModerated) {who='human'; title=window.l_decontrol;} else title=window.l_takecontrol;
@@ -1578,7 +1597,15 @@ function top_panel()
   c+=" ";
 
   title=window.l_vadsetup;
-  c+="<button title='" + title + "' onclick='javascript:{if(checkcontrol())vad_setup();return false;}' class='vadsetupspr'></button>";
+  c+="<button title='" + title + "' onclick='javascript:{vad_setup();return false;}' class='vadsetupspr'></button>";
+
+  c+=" ";
+
+  try{ muteNewUsers=conf[0][13]; enableSubtitles=conf[0][14]; } catch(e) { }
+  if(muteNewUsers==1) title=window.l_unmute_new_conference_users; else title=window.l_mute_new_conference_users;
+  c+="<button title='" + title + "' onclick='javascript:{if(checkcontrol())queue_otf_request("
+    + (muteNewUsers?"OTFC_UNMUTE_NEW_USERS":"OTFC_MUTE_NEW_USERS") + ",0);return false;}' class='mutenewusers"
+    + muteNewUsers + "'></button>";
 
   try{ recState=conf[0][11]; } catch(e) { recState=0; }
   if(recState==1) title=window.l_videorecorderstop; else title=window.l_videorecorder;
@@ -1589,11 +1616,19 @@ function top_panel()
     + "document.cookie=\"sortMode=\"+sortMode+\"; expires=Fri, 31 Dec 2999 23:59:59 GMT\";members_refresh();return false;}'"
     +" class='sortspr" + sortMode + "'></button>";
 
-  var i; try{ i=conf[0][10]; }catch(e){i=0;} //if((i<1)||(i>3))i=0;
-  title=window.l_filtermode[i-1];
-  c+=' '+ get_resizer(i);
+  c+=" <button title='Subtitles' onclick='queue_otf_request(" + OTFC_ENABLE_SUBTITLES + ", (enableSubtitles+1)%2);return false;' class='subtitles" + enableSubtitles + "'></button>";
 
-  c+="</td><td width='30%' align=right id='savetpl' name='savetpl'><nobr>";
+  c+="&nbsp;Resizer: <span id='ScaleTiming'>&nbsp;</span>";
+
+
+  c+="</td><td width='15%'>";
+  c+="<div id='slb1' class='sliderbg' onmouseleave='slidercheck()' onmouseup='slidercheck()' onmousemove='if(slidermove)moveslider(event)'>";
+  c+=  "<div id='sll1' class='sliderleft' />";
+  c+=  "<div title='level' id='slh1' class='sliderhandle' onselectstart='return false' onmousedown='startslidermove(event)'>" + getdb(masterVolume) + "</div>";
+  c+="</div>";
+
+
+  c+="</td><td width='25%' align=right id='savetpl' name='savetpl'><nobr>";
 
   c+=get_template_lock();
   c+="<input type='button' class='btn btn-large btn-danger' style='width:20px;padding-left:0px;padding-right:0px;margin-right:1px' value='&ndash;' onclick='" +
@@ -1615,6 +1650,8 @@ function top_panel()
   c+="</nobr></td></tr></table>";
 
   t.innerHTML=c;
+
+  setslider(masterVolume);
 }
 
 function save_template(finalName)
@@ -1667,7 +1704,7 @@ function vad_setup(){
   var sfx="</span>&nbsp;&nbsp;&nbsp;";
   
   var c ="<div style='border-radius:15px;background-color:#dec;border:1px solid #acb;padding-left:15px'><form name='fakeform2'><div class='input-prepend input-append'>";
-    c  +="<br><b>Voice Activation Volume:</b> "+inputst+"name='vad1' id='vad1' value='"+vad1+"' size=5 maxlength=5>"+pfx3+"level: 25...25000"+sfx;
+    c  +="<br><b>Voice Activation Volume:</b> "+inputst+"name='vad1' id='vad1' value='"+vad1+"' size=3 maxlength=3>"+pfx3+"level: 1...99"+sfx;
     c  +="<b>Delay:</b> " +inputst+"name='vad2' id='vad2' value='"+vad2+"' size=5 maxlength=5>"+pfx3+"ms: 0...65535"   +sfx;
     c  +="<b>Timeout:</b> "          +inputst+"name='vad3' id='vad3' value='"+vad3+"' size=5 maxlength=5>"+pfx3+"ms: 0...65535"   +sfx;
   c+="<input type='button' onclick='javascript:vad_save()' class='btn btn-danger' value='Save'> ";
@@ -1837,11 +1874,13 @@ function build_page()
     var l2=document.getElementById('loggingframe');
     l0.style.left='-'+(log_width-5)+'px';
     l1.style.width=(log_width-8)+'px'; l1.style.height=(total_height-2)+'px';
-    l2.style.width=(log_width-8)+'px'; l2.style.height=(total_height-2)+'px';
+    l2.style.width=(log_width-8)+'px'; l2.style.height=(total_height-20)+'px';
     l0=document.getElementById('cb2');
     l0.style.width=''+mmw+'px'; l0.style.height=total_height+'px';
-  } catch(e) {};
 
+    add_chat();
+  } catch(e) {}
+    
   mockup_content=""; var pos_y=0;
   if(!classicMode)
   {
@@ -1921,6 +1960,55 @@ function build_page()
   {
     for(i=0;i<members.length;i++)frameload(i);
   }
+}
+
+function add_chat()
+{
+  if(typeof log_width == 'undefined') return;
+  if(document.getElementById('chatBlock')) remove_chat();
+  var l1 = document.getElementById('logging1');
+  
+  var chatBlock=document.createElement('div'); chatBlock.id='chatBlock'; chatBlock.className='chatBlock';
+  l1.appendChild(chatBlock); chatBlock=document.getElementById('chatBlock');
+
+  var chatText=document.createElement('input'); chatText.id='chatText'; chatText.className='chatText';
+  chatText.style.width=(log_width-36)+'px';
+  chatBlock.appendChild(chatText); chatText=document.getElementById('chatText');
+
+  var chatButton=document.createElement('input'); chatButton.setAttribute('type','button'); chatButton.id='chatButton'; chatButton.className='chatButton'; chatButton.value=String.fromCharCode(9166);
+  chatBlock.appendChild(chatButton); chatButton=document.getElementById('chatButton');
+
+  document.getElementById('chatText').addEventListener('keydown', checkEnterSendMsg);
+  document.getElementById('chatButton').addEventListener('click', sendMsg);
+}
+
+function remove_chat()
+{
+  var l1 = document.getElementById('logging1');
+  var chatBlock = document.getElementById('chatBlock');
+  var chatText = document.getElementById('chatText');
+  var chatButton = document.getElementById('chatButton');
+  chatButton.removeEventListener('click', checkEnterSendMsg, true);
+  chatText.removeEventListener('keydown', sendMsg, true);
+  chatbutton = chatBlock.removeChild(chatButton); chatButton=0;
+  chatText = chatBlock.removeChild(chatText); chatText=0;
+  chatBlock = l1.removeChild(chatBlock); chatBlock=0;
+}
+
+function checkEnterSendMsg(event)
+{
+  if (event.key!=="Enter") return;
+  sendMsg(event);
+}
+
+function sendMsg(event)
+{
+  if(!document.getElementById('chatText')) return;
+  var chatText = document.getElementById('chatText');
+  var chatMsg = chatText.value;
+  if(chatMsg=="") return;
+  queue_otf_request(OTFC_CHAT,chatMsg);
+  chatText.value="";
 }
 
 function get_mixers_content()
@@ -2342,48 +2430,6 @@ function getLeftPos(el) {
   return leftPos;
 }
 
-function resize_timing(s)
-{
-  document.getElementById('ScaleTiming').innerHTML=Math.floor(s/1000)+'K CPU cycles avg.';
-  alive();
-}
-
-function get_resizer(i)
-{
-  var a=[
-    'openmcu-ru built-in',
-    "libyuv|kFilterNone",
-    "libyuv|kFilterBilinear",
-    "libyuv|kFilterBox",
-    "swscale|SWS_FAST_BILINEAR",
-    "swscale|SWS_BILINEAR",
-    "swscale|SWS_BICUBIC",
-    "swscale|SWS_X",
-    "swscale|SWS_POINT",
-    "swscale|SWS_AREA",
-    "swscale|SWS_BICUBLIN",
-    "swscale|SWS_GAUSS",
-    "swscale|SWS_SINC",
-    "swscale|SWS_LANCZOS",
-    "swscale|SWS_SPLINE"
-  ];
-  
-  var r = "&nbsp;Filter: <select class='btn btn-small' style='height:28px;' name='FilterSelector' onchange='{queue_otf_request("
-    + OTFC_YUV_FILTER_MODE + ",this.value);return false;}'>";
-  
-  for(j=0;j<a.length;j++)
-  {
-    r+="<option value=\""+j+"\"";
-    if(i==j) r+=" selected";
-    r+=">"+a[j]+"</option>";
-  }
-  r+="</select>";
-
-  r+="&nbsp;<span id='ScaleTiming'>-</span>";
-
-  return r;
-}
-
 function dspr(id,spr)
 {
   var o=document.getElementById('dial_'+idid(id));
@@ -2402,4 +2448,39 @@ function rszspr(id,state)
   if(o)o.className='rszspr'+state;
   member_modify_by_id(id,15,state);
   alive();
+}
+
+function setsliderpos(v)
+{
+  if(document.getElementById('sll1')) document.getElementById('sll1').style.width = v*2 + 'px';
+  if(document.getElementById('slh1'))
+  {
+    var slh1        = document.getElementById('slh1');
+    slh1.style.left = (v*2-10) + 'px';
+    slh1.innerHTML  = getdb(v);
+  }
+}
+function setslider(v){ slidervalue = v; setsliderpos(v); slidertemp = v; }
+function slidercheck()
+{
+  if(!slidermove) return; slidermove=0;
+  if(slidertemp != slidervalue) setslider(slidertemp);
+  queue_otf_request(OTFC_SET_MASTER_VOLUME, slidertemp-40);
+}
+function moveslider(e)
+{
+  slidertemp = slidervalue + ((e.pageX - sliderstartx)>>1);
+  if(slidertemp>80) slidertemp=80; if(slidertemp<0) slidertemp=0;
+  setsliderpos(slidertemp);
+}
+function startslidermove(e)
+{
+  if(slidermove) return; slidermove=1
+  sliderstartx = e.pageX;
+}
+function getdb(v){ if(v==40) return '//'; return ((v>40)?'+':'') + (v-40); }
+function mvdb(v)
+{
+  masterVolume=v+40;
+  setslider(masterVolume);
 }

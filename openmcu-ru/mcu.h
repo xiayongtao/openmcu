@@ -33,7 +33,7 @@ static const PString MCU_INTERNAL_CALL_PREFIX("INTERNAL_CALL_");
 
 const WORD DefaultHTTPPort = 1420;
 
-static const char ServerIdKey[]           = "OpenMCU-ru Server Id";
+static PString ServerIdKey                = PString(PRODUCT_NAME_TEXT)+" Server Id";
 static const char LogLevelKey[]           = "Log Level";
 static const char TraceLevelKey[]         = "Trace level";
 static const char TraceRotateKey[]        = "Rotate trace files at startup";
@@ -71,7 +71,7 @@ static const char SipListenerKey[]         = "SIP Listener";
 static const char TelnetListenerKey[]      = "Telnet Listener";
 static const char TelnetDefaultListener[]  = "*:1423";
 
-const unsigned int DefaultVideoFrameRate = 10;
+const unsigned int DefaultVideoFrameRate = 25;
 const unsigned int DefaultVideoQuality   = 10;
 
 static const char RecorderFfmpegDirKey[]   = "Video Recorder directory";
@@ -98,11 +98,11 @@ static const char DefaultRecordingDirectory[] = RECORDS_DIR;
 #else
 static const char DefaultRecordingDirectory[] = "records";
 #endif
-static const int  DefaultRecorderFrameWidth   = 704;
-static const int  DefaultRecorderFrameHeight  = 576;
-static const int  DefaultRecorderFrameRate    = 10;
-static const int  DefaultRecorderSampleRate   = 16000;
-static const int  DefaultRecorderAudioChans   = 1;
+static const int  DefaultRecorderFrameWidth   = 1280;
+static const int  DefaultRecorderFrameHeight  = 720;
+static const int  DefaultRecorderFrameRate    = 25;
+static const int  DefaultRecorderSampleRate   = 48000;
+static const int  DefaultRecorderAudioChans   = 2;
 
 // room parameters
 static const char ForceSplitVideoKey[]          = "Force split screen video";
@@ -116,8 +116,10 @@ static const char RoomRecallLastTemplateKey[]   = "Recall last template";
 static const char RoomTimeLimitKey[]            = "Room time limit";
 static const char LockTemplateKey[]             = "Template locks conference by default";
 
+static PString InputOutputGainSelect            = "-20,-18,-16,-14,-12,-10,-8,-6,-4,-2,0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40,42,44,46,48,50,52,54,56,58,60";
+
 static const char ReceivedVFUDelayKey[]         = "Received VFU delay";
-static PString ReceivedVFUDelaySelect           = "Disable,0/0,5/5,5/10,10/5,10/10";
+static PString ReceivedVFUDelaySelect           = "Disable,0/0,1/1,1/2,1/3,1/4,1/5,1/6,1/8,1/10,1/15,2/5,5/5,10/5,2/10,5/10,10/10";
 static const char SendVFUDelayKey[]             = "Send VFU delay";
 
 static const char RTPInputTimeoutKey[]          = "RTP Input Timeout";
@@ -192,8 +194,12 @@ static const char OPTION_ENCODER_CHANNELS[] = "Encoder Channels";
 static const char OPTION_DECODER_CHANNELS[] = "Decoder Channels";
 static const char OPTION_TX_KEY_FRAME_PERIOD[] = "Tx Key Frame Period";
 
+static const char VideoScaleFilterKey[] = "Video scale filter";
+
+static const char VideoInterPacketDelayKey[] = "Video inter-packet delay ms";
+
 static PString MCUScaleFilterNames =
-                                  "openmcu-ru built-in"
+                                  "built-in"
                                   ",libyuv|kFilterNone"
                                   ",libyuv|kFilterBilinear"
                                   ",libyuv|kFilterBox"
@@ -252,10 +258,11 @@ static PString MCUControlCodes = "NO ACTION,"
 #define OTFC_INVITE                   32
 #define OTFC_REMOVE_OFFLINE_MEMBER    33
 #define OTFC_DIAL                     34
+#define OTFC_CHAT                     35
 #define OTFC_DROP_ALL_ACTIVE_MEMBERS  64
 #define OTFC_INVITE_ALL_INACT_MMBRS   65
 #define OTFC_REMOVE_ALL_INACT_MMBRS   66
-#define OTFC_YUV_FILTER_MODE          68
+#define OTFC_ENABLE_SUBTITLES         68
 #define OTFC_TAKE_CONTROL             69
 #define OTFC_DECONTROL                70
 #define OTFC_ADD_VIDEO_MIXER          71
@@ -268,8 +275,11 @@ static PString MCUControlCodes = "NO ACTION,"
 #define OTFC_UNMUTE_ALL               78
 #define OTFC_AUDIO_GAIN_LEVEL_SET     79
 #define OTFC_OUTPUT_GAIN_SET          80
+#define OTFC_SET_MASTER_VOLUME        81
 #define OTFC_ADD_TO_ABOOK             90
 #define OTFC_REMOVE_FROM_ABOOK        91
+#define OTFC_MUTE_NEW_USERS           92
+#define OTFC_UNMUTE_NEW_USERS         93
 #define OTFC_ROOM_CREATE              201
 #define OTFC_ROOM_DELETE              202
 #define OTFC_ROOM_SHOW_MEMBERS        211
@@ -481,12 +491,19 @@ class OpenMCU : public OpenMCUPreInit, public OpenMCUProcessAncestor
         type = 4;
 #endif
       scaleFilterType = type;
-      return GetScaleFilterName(type);
+      PString scaleFilterName = GetScaleFilterName(scaleFilterType);
+      MCUTRACE(1, trace_section << "set scale filter: " << scaleFilterType << " " << scaleFilterName);
+      return scaleFilterName;
     }
 
     int GetScaleFilterType()
     {
       return scaleFilterType;
+    }
+
+    static PINDEX GetScaleFilterType(const PString & name)
+    {
+      return MCUScaleFilterNames.Tokenise(",").GetStringsIndex(name);
     }
 
     static PString GetScaleFilterName(int type)

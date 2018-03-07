@@ -1,3 +1,24 @@
+/*
+ * utils_json.cxx
+ *
+ * Copyright (C) 2015 Andrey Burbovskiy, OpenMCU-ru, All Rights Reserved
+ *
+ * The Initial Developer of the Original Code is Andrey Burbovskiy (andrewb@yandex.ru), All Rights Reserved
+ *
+ * The contents of this file are subject to the Mozilla Public License
+ * Version 1.0 (the "License"); you may not use this file except in
+ * compliance with the License. You may obtain a copy of the License at
+ * http://www.mozilla.org/MPL/
+ *
+ * Software distributed under the License is distributed on an "AS IS"
+ * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+ * the License for the specific language governing rights and limitations
+ * under the License.
+ *
+ * Contributor(s):  Andrey Burbovskiy (andrewb@yandex.ru)
+ *
+ */
+
 
 #include "precompile.h"
 #include "mcu.h"
@@ -20,11 +41,11 @@ std::string & JsQuoteScreen(const std::string &str, std::string &r)
     {
       case(0x22):
         // "
-        r.push_back('\\'); r.push_back('\\'); r.push_back('x'); r.push_back('2'); r.push_back('2');
+        r.push_back('\\'); r.push_back('"');
         break;
       case(0x5c):
         // backslash
-        r.push_back('\\'); r.push_back('\\'); r.push_back('x'); r.push_back('5'); r.push_back('c');
+        r.push_back('\\'); r.push_back('\\');
         break;
       case ('<'):
         r.push_back('&'); r.push_back('l'); r.push_back('t');
@@ -64,7 +85,7 @@ MCUJSON::MCUJSON(JsonTypes type, const std::string &key, int size)
   {
     json_key = key;
     json_type = type;
-    value_array = new MCUSharedList<MCUJSON>(size);
+    value_array = new MCUJSONList(size);
   } else {
     json_key = key;
     json_type = type;
@@ -357,7 +378,7 @@ bool MCUJSON::Remove(const std::string &key)
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-MCUSharedListSharedIterator<MCUSharedList<MCUJSON>, MCUJSON> MCUJSON::Find(const std::string &key)
+MCUSharedListSharedIterator<MCUJSONList, MCUJSON> MCUJSON::Find(const std::string &key)
 {
   if(value_array)
     return value_array->Find(key);
@@ -437,7 +458,7 @@ MCUJSON & MCUJSON::operator = (const PString &value)
   return *this;
 }
 
-MCUJSON & MCUJSON::operator = (MCUSharedList<MCUJSON> *value)
+MCUJSON & MCUJSON::operator = (MCUJSONList *value)
 {
   if(value_array)
   {

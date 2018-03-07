@@ -108,7 +108,8 @@ case "$target_cpu" in
    x86 | i686 | i586 | i486 | i386) MACHTYPE=x86
                    ;;
 
-   x86_64 | amd64 | hppa64 | ppc64 | s390x) MACHTYPE=$target_cpu ;
+   x86_64 | amd64 | hppa64 | ppc64* | s390x | aarch64)
+                   MACHTYPE=$target_cpu
                    P_64BIT=1 ;
                    LIB64=1 ;
                    ;;
@@ -123,7 +124,7 @@ case "$target_cpu" in
    powerpc)        MACHTYPE=ppc ;
                    ;;
 
-   powerpc64)      MACHTYPE=ppc64 ;
+   powerpc64*)     MACHTYPE=ppc64 ;
                    P_64BIT=1 ;
                    LIB64=1 ;
                    ;;
@@ -524,9 +525,9 @@ dnl check for resampling library
 
 AC_ARG_ENABLE(separator, [ ])
 AC_ARG_ENABLE(resample, [AS_HELP_STRING([--disable-resample],[Disable resampling (default enabled)],[40],[100])], [resample="$enableval"])
-AC_ARG_ENABLE(resampler-ffmpeg, [AS_HELP_STRING([--disable-resampler-ffmpeg],[Enable check only libswresample resampler(default auto)],[40],[100])], [resampler_ffmpeg="yes" resampler_libav="no" resampler_libsamplerate="no"])
-AC_ARG_ENABLE(resampler-libav, [AS_HELP_STRING([--disable-resampler-libav],[Enable check only libavresample resampler(default auto)],[40],[100])], [resampler_ffmpeg="no" resampler_libav="yes" resampler_libsamplerate="no"])
-AC_ARG_ENABLE(resampler-libsamplerate, [AS_HELP_STRING([--disable-resampler-libsamplerate],[Enable check only libsamplerate resampler(default auto)],[40],[100])], [resampler_ffmpeg="no" resampler_libav="no" resampler_libsamplerate="yes"])
+AC_ARG_ENABLE(resampler-ffmpeg, [AS_HELP_STRING([--disable-resampler-ffmpeg],[Disable libswresample from ffmpeg (default auto)],[40],[100])], [resampler_ffmpeg="yes" resampler_libav="no" resampler_libsamplerate="no"])
+AC_ARG_ENABLE(resampler-libav, [AS_HELP_STRING([--disable-resampler-libav],[Disable libavresample from libav (default auto)],[40],[100])], [resampler_ffmpeg="no" resampler_libav="yes" resampler_libsamplerate="no"])
+AC_ARG_ENABLE(resampler-libsamplerate, [AS_HELP_STRING([--disable-resampler-libsamplerate],[Disable libsamplerate (default auto)],[40],[100])], [resampler_ffmpeg="no" resampler_libav="no" resampler_libsamplerate="yes"])
 
 AC_SUBST(USE_SWRESAMPLE, 0)
 AC_SUBST(USE_AVRESAMPLE, 0)
@@ -786,7 +787,7 @@ if test "${libzrtp}" = "yes"; then
     AC_CHECK_FILE(${top_srcdir}/libs/libzrtp.tar.gz, USE_SRC_ZRTP=1, USE_SRC_ZRTP=0)
     AS_UNSET([$as_ac_File])
     if test ${USE_SRC_ZRTP} = 0; then
-      (wget --directory-prefix=libs http://openmcu.ru/public/OpenMCU-ru/libs/libzrtp.tar.gz)
+      (wget --directory-prefix=libs http://videoswitch.ru/public/OpenMCU-ru/libs/libzrtp.tar.gz)
       AC_CHECK_FILE(${top_srcdir}/libs/libzrtp.tar.gz, USE_SRC_ZRTP=1, USE_SRC_ZRTP=0)
       AS_UNSET([$as_ac_File])
     fi

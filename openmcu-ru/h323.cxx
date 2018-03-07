@@ -73,7 +73,7 @@ class MCUConnectionCleaner : public PThread
 
     void Main()
     {
-      PTRACE(1, "MCU Connection cleaner start " << callToken);
+      PTRACE(2, "MCU Connection cleaner start " << callToken);
       MCUConnectionList & connectionList = ep->GetConnectionList();
       MCUConnectionList & connectionDeleteList = ep->GetConnectionDeleteList();
       MCUConnectionList::shared_iterator r = connectionList.Find(callToken);
@@ -91,7 +91,7 @@ class MCUConnectionCleaner : public PThread
             connectionDeleteList.Erase(s);
         }
       }
-      PTRACE(1, "MCU Connection cleaner stop " << callToken);
+      PTRACE(2, "MCU Connection cleaner stop " << callToken);
     }
 
   protected:
@@ -103,7 +103,7 @@ class MCUConnectionCleaner : public PThread
 
 void H323CallThread::Main()
 {
-  PTRACE(3, "H225\tStarted call thread");
+  PTRACE(3, "H225\tStarted call thread alias=" << alias << " address=" << address);
   if(connection.Lock())
   {
     H323Connection::CallEndReason reason = connection.SendSignalSetup(alias, address);
@@ -131,7 +131,7 @@ void H323CallThread::Main()
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 MCUH323EndPoint::MCUH323EndPoint(ConferenceManager & _conferenceManager)
-  : conferenceManager(_conferenceManager), connectionList(1024), connectionDeleteList(1024)
+  : conferenceManager(_conferenceManager)
 {
   rsCaps = NULL;
   tsCaps = NULL;
@@ -391,7 +391,7 @@ H323Connection * MCUH323EndPoint::InternalMakeCall(const PString & trasferFromTo
       transport = address.CreateTransport(*this);
     if(transport == NULL)
     {
-      PTRACE(1, trace_section << "Invalid transport in \"" << remoteParty << '"');
+      PTRACE(2, trace_section << "Invalid transport in \"" << remoteParty << '"');
       return NULL;
     }
   }
@@ -416,7 +416,7 @@ H323Connection * MCUH323EndPoint::InternalMakeCall(const PString & trasferFromTo
     connection = CreateConnection(lastReference, userData, transport, NULL);
     if(connection == NULL)
     {
-      PTRACE(1, trace_section << "CreateConnection returned NULL");
+      PTRACE(2, trace_section << "CreateConnection returned NULL");
       return NULL;
     }
     connection->Lock();
@@ -435,7 +435,7 @@ H323Connection * MCUH323EndPoint::InternalMakeCall(const PString & trasferFromTo
   }
 #endif
 
-  PTRACE(3, trace_section << "Created new connection: " << newToken);
+  PTRACE(3, trace_section << "Created new connection: " << newToken << " address=" << address);
   new H323CallThread(*this, *connection, *transport, alias, address);
   return connection;
 }
@@ -483,11 +483,11 @@ BOOL MCUH323EndPoint::ClearCallSynchronous(const PString & callToken, H323Connec
     if(connectionsActive.GetAt(callToken) == NULL)
       return FALSE;
     // Перенаправить в h323plus
-    PTRACE(1, trace_section << "Unknown connection " << callToken << ", redirection to H323EndPoint");
+    PTRACE(2, trace_section << "Unknown connection " << callToken << ", redirection to H323EndPoint");
     return H323EndPoint::ClearCallSynchronous(callToken, reason, sync);
   }
 
-  PTRACE(1, trace_section << "Clearing connection " << callToken << " reason=" << reason << " thread " << PThread::Current()->GetThreadName());
+  PTRACE(2, trace_section << "Clearing connection " << callToken << " reason=" << reason << " thread " << PThread::Current()->GetThreadName());
 
   connection->SetCallEndReason(reason, sync);
 
@@ -544,14 +544,14 @@ BOOL MCUH323EndPoint::OnConnectionCreated(MCUH323Connection * conn)
     if(it.GetObject() == conn)
       return TRUE;
     // Удалить
-    PTRACE(1, trace_section << "Error !");
+    PTRACE(2, trace_section << "Error !");
     PString fakeToken = PGloballyUniqueID().AsString();
     connectionList.Insert(conn, (long)conn, fakeToken);
     ClearCall(fakeToken);
     return FALSE;
   }
 
-  PTRACE(1, trace_section << "Insert connection " << conn->GetCallToken());
+  PTRACE(2, trace_section << "Insert connection " << conn->GetCallToken());
   connectionList.Insert(conn, (long)conn, conn->GetCallToken());
 
   Registrar *registrar = OpenMCU::Current().GetRegistrar();
@@ -770,7 +770,7 @@ void MCUH323EndPoint::AddCapabilitiesMCU()
       AddCapability(new_cap);
     }
   }
-  // add fake H.264 capabilities, need only for H.323
+  // add H.264 capabilities for H.323
   if(CheckCapability("H.264{sw}"))
   {
     for(int i = 0; h264_profile_levels[i].level != 0; ++i)
@@ -784,7 +784,7 @@ void MCUH323EndPoint::AddCapabilitiesMCU()
       AddCapability(new_cap);
     }
   }
-  // add fake H.263p capabilities, need only for H.323
+  // add H.263p capabilities for H.323
   if(CheckCapability("H.263p{sw}"))
   {
     for(int i = 0; h263_resolutions[i].width != 0; ++i)
@@ -797,7 +797,7 @@ void MCUH323EndPoint::AddCapabilitiesMCU()
       AddCapability(new_cap);
     }
   }
-  // add fake H.263 capabilities, need only for H.323
+  // add H.263 capabilities for H.323
   if(CheckCapability("H.263{sw}"))
   {
     for(int i = 0; h263_resolutions[i].width != 0; ++i)
@@ -810,7 +810,7 @@ void MCUH323EndPoint::AddCapabilitiesMCU()
       AddCapability(new_cap);
     }
   }
-  // add fake H.261 capabilities, need only for H.323
+  // add H.261 capabilities for H.323
   if(CheckCapability("H.261{sw}"))
   {
     for(int i = 0; h263_resolutions[i].width != 0; ++i)
@@ -1075,6 +1075,190 @@ PString MCUH323EndPoint::GetRoomStatusJS()
   return str;
 }
 
+PString MCUH323EndPoint::GetRoomStatusJson()
+{
+  PString str = "[";
+  PTime now;
+
+  BOOL firstConference = TRUE;
+  MCUConferenceList & conferenceList = conferenceManager.GetConferenceList();
+  for(MCUConferenceList::shared_iterator it = conferenceList.begin(); it != conferenceList.end(); ++it)
+  {
+    Conference *conference = it.GetObject();
+    PStringStream c;
+    c << "{";
+    c << "\"roomname\":" << JsQuoteScreen(conference->GetNumber()) << ","; 
+    c << "\"terminals\":[";
+    {
+      BOOL firstMember = TRUE;
+      MCUMemberList & memberList = conference->GetMemberList();
+      for(MCUMemberList::shared_iterator it2 = memberList.begin(); it2 != memberList.end(); ++it2)
+      {
+        
+        ConferenceMember * member = *it2;
+		    string name = member->GetName();
+        if(!member->IsSystem() && !member->IsOnline() 
+			    || name.find("recorder") != string::npos
+			    || name.find("cache") != string::npos)
+          continue;
+
+        if(!firstMember) c << ",";
+        c << "{"                                                          // c[r][4][m]: member m descriptor
+          << "\"id\":" << PString((int)member->GetID())                                            // c[r][4][m][0]: member id
+          << ",\"name\":" << JsQuoteScreen(member->GetName())                           // c[r][4][m][1]: member name
+          << ",\"line\":" << (member->IsOnline() ? "1" : "0")                           // c[r][4][m][2]: is member visible: 1/0
+          << ",\"type\":" << PString(member->GetType())                                 // c[r][4][m][3]: 0-NONE, 1-MCU ...
+        ;
+
+        PTimeInterval duration;
+        PString formatString, audioCodecR, audioCodecT, videoCodecR, videoCodecT, ra;
+        int codecCacheMode=-1, cacheUsersNumber=-1;
+        MCUH323Connection * conn = NULL;
+        DWORD orx=0, otx=0, vorx=0, votx=0, prx=0, ptx=0, vprx=0, vptx=0, plost=0, vplost=0, plostTx=0, vplostTx=0;
+        bool isAudioCache = false;
+        if(member->GetType() == MEMBER_TYPE_PIPE)
+        {
+          duration = now - member->GetStartTime();
+        }
+        else if(member->GetType() == MEMBER_TYPE_RECORDER)
+        {
+          duration = PTime() - member->GetStartTime();
+        }
+        else if(member->GetType() == MEMBER_TYPE_STREAM)
+        {
+          duration = PTime() - member->GetStartTime();
+          conn = FindConnectionWithLock(member->GetCallToken());
+          if(conn)
+          {
+            audioCodecT = conn->GetAudioTransmitCodecName();
+            MCU_RTP_UDP *sess = (MCU_RTP_UDP *)conn->GetSession(RTP_Session::DefaultAudioSessionID);
+            if(sess != NULL)
+            {
+              orx = sess->GetOctetsReceived(); otx = sess->GetOctetsSent();
+              prx = sess->GetPacketsReceived(); ptx = sess->GetPacketsSent();
+              plost = sess->GetPacketsLost(); plostTx = sess->GetPacketsLostTx();
+            }
+#if MCU_VIDEO
+            videoCodecT = conn->GetVideoTransmitCodecName();
+            MCU_RTP_UDP *vSess = (MCU_RTP_UDP *)conn->GetSession(RTP_Session::DefaultVideoSessionID);
+            if(vSess != NULL)
+            {
+              vorx=vSess->GetOctetsReceived(); votx=vSess->GetOctetsSent();
+              vprx=vSess->GetPacketsReceived(); vptx=vSess->GetPacketsSent();
+              vplost = vSess->GetPacketsLost(); vplostTx = vSess->GetPacketsLostTx();
+            }
+
+            conn->GetChannelsMutex().Wait();
+            if(conn->GetVideoTransmitChannel() != NULL)
+            {
+              codecCacheMode = conn->GetVideoTransmitChannel()->GetCacheMode();
+              formatString = conn->GetVideoTransmitChannel()->GetCacheName();
+            }
+            conn->GetChannelsMutex().Signal();
+#endif
+            ra = conn->GetRemoteApplication();
+            conn->Unlock();
+          }
+        }
+        else if(member->GetType() == MEMBER_TYPE_CACHE)
+        {
+          ConferenceCacheMember * cacheMember = dynamic_cast<ConferenceCacheMember *>(member);
+          if(cacheMember)
+          {
+            isAudioCache = cacheMember->IsAudio();
+            formatString = cacheMember->GetCacheName();
+            cacheUsersNumber = cacheMember->GetCacheUsersNumber();
+            codecCacheMode = 1;
+          }
+          duration = now - member->GetStartTime();
+        }
+        else // real (visible, external) endpoint
+        {
+          conn = FindConnectionWithLock(member->GetCallToken());
+          if(conn!=NULL)
+          {
+              duration = now - conn->GetConnectionStartTime();
+              audioCodecR = conn->GetAudioReceiveCodecName();
+              audioCodecT = conn->GetAudioTransmitCodecName();
+              MCU_RTP_UDP *sess = (MCU_RTP_UDP *)conn->GetSession(RTP_Session::DefaultAudioSessionID);
+              if(sess != NULL)
+              {
+                orx = sess->GetOctetsReceived(); otx = sess->GetOctetsSent();
+                prx = sess->GetPacketsReceived(); ptx = sess->GetPacketsSent();
+                plost = sess->GetPacketsLost(); plostTx = sess->GetPacketsLostTx();
+              }
+#if MCU_VIDEO
+                videoCodecR = conn->GetVideoReceiveCodecName() + "@" + member->GetVideoRxFrameSize();
+                videoCodecT = conn->GetVideoTransmitCodecName();
+                MCU_RTP_UDP *vSess = (MCU_RTP_UDP *)conn->GetSession(RTP_Session::DefaultVideoSessionID);
+                if(vSess != NULL)
+                {
+                  vorx=vSess->GetOctetsReceived(); votx=vSess->GetOctetsSent();
+                  vprx=vSess->GetPacketsReceived(); vptx=vSess->GetPacketsSent();
+                  vplost = vSess->GetPacketsLost(); vplostTx = vSess->GetPacketsLostTx();
+                }
+
+                conn->GetChannelsMutex().Wait();
+                if(conn->GetVideoTransmitChannel() != NULL)
+                {
+                  codecCacheMode = conn->GetVideoTransmitChannel()->GetCacheMode();
+                  formatString = conn->GetVideoTransmitChannel()->GetCacheName();
+                }
+                conn->GetChannelsMutex().Signal();
+
+#             endif
+              ra = conn->GetRemoteApplication();
+              conn->Unlock();
+          }
+        }
+
+        
+		PTRACE(1, "MCU\GetVideoTxFrameRate: " << member->GetVideoTxFrameRate() << ", " <<  "GetVideoRxFrameRate:" << member->GetVideoRxFrameRate());
+        //c << ",\"roomname\":" << JsQuoteScreen(conference->GetNumber())
+        c  << ",\"duration\":" << duration.GetMilliSeconds()                                 // c[r][4][m][4]: member duration
+          << ",\"abytein\":" << orx 
+          << ",\"abyteout\":" << otx 
+          << ",\"vbytein\":" << vorx 
+          << ",\"vbyteout\":" << votx            // c[r][4][m][5-8]: orx, otx, vorx, votx
+          << ",\"acodecin\":" << JsQuoteScreen(audioCodecR)                                 // c[r][4][m][9]: audio receive codec name
+          << ",\"acodecout\":" << JsQuoteScreen(audioCodecT)                                 // c[r][4][m][10]: audio transmit codec name
+          << ",\"vcodecin\":" << JsQuoteScreen(videoCodecR)                                 // c[r][4][m][11]: video receive codec name
+          << ",\"vcodeout\":" << JsQuoteScreen(videoCodecT)                                 // c[r][4][m][12]: video transmit codec name
+          //<< "," << codecCacheMode 
+          //<< "," << JsQuoteScreen(formatString)       // c[r][4][m][13,14]: codecCacheMode, formatString
+          << ",\"ratein\":" << member->GetVideoRxFrameRate()                              // c[r][4][m][15]: video rx frame rate
+          << ",\"rateout\":" << member->GetVideoTxFrameRate()// c[r][4][m][16]: video tx frame rate
+          //<< "," << cacheUsersNumber                                           // c[r][4][m][17]: cache users number
+          << ",\"apackin\":" << prx 
+          << ",\"apackout\":" << ptx 
+          << ",\"vpackin\":" << vprx 
+          << ",\"vpackout\":" << vptx            // c[r][4][m][18-21]: prx, ptx, vprx, vptx
+          //<< "," << JsQuoteScreen(ra)                                          // c[r][4][m][22]: remote application name
+          << ",\"alostin\":" << plost 
+          << ",\"vlostin\":" << vplost 
+          << ",\"alostout\":" << plostTx 
+          << ",\"vlostout\":" << vplostTx// c[r][4][m][23-26]: rx & tx_from_RTCP packets lost (audio, video)
+          //<< "," << isAudioCache                                               // c[r][4][m][27]: audio cache
+          << "}";
+        firstMember = FALSE;
+      }
+       
+     c << "]";
+    }
+
+    c << "}";
+    if(!firstConference) str += ",";
+    firstConference = FALSE;
+   
+    str += c;
+  }
+
+  str += "]";
+  return str;
+
+    
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 PString MCUH323EndPoint::GetRoomStatusJSStart()
@@ -1329,10 +1513,13 @@ PString MCUH323EndPoint::GetConferenceOptsJavascript(Conference & c)
 
     r << "]"; // l3 close
 
-  r << "," << OpenMCU::Current().GetScaleFilterType();                      // [0][10] = yuv resizer filter mode
+  int scaleFilterType = OpenMCU::Current().GetScaleFilterType();
+  r << "," << "\"" << OpenMCU::GetScaleFilterName(scaleFilterType) << "\""; // [0][10] = yuv resizer filter mode
 
   if(c.conferenceRecorder != NULL && c.conferenceRecorder->IsRunning()) r << ",1"; else r << ",0"; // [0][11] = video recording state (1=recording, 0=NO)
   if(c.lockedTemplate) r << ",1"; else r << ",0";                         // [0][12] = member list locked by template (1=yes, 0=no)
+  if(c.muteNewUsers) r << ",1"; else r << ",0";                           // [0][13] = mute new conference users (1=yes, 0=no)
+  if(c.enableSubtitles) r << ",1"; else r << ",0";                        // [0][14] = enable subtitles (1=yes, 0=no)
 
   r << "]"; //l2 close
 
@@ -1582,11 +1769,11 @@ void MCUH323EndPoint::UnmoderateConference(Conference & conference)
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-PString MCUH323EndPoint::SetRoomParams(const PStringToString & data)
+PString MCUH323EndPoint::SetRoomParams(const PStringToString & data,PString & rdata)
 {
   // "On-the-Fly" Control via XMLHTTPRequest:
   if(data.Contains("otfc"))
-    return (OpenMCU::Current().OTFControl(data) ? "OK" : "FAIL");
+    return (OpenMCU::Current().OTFControl(data,rdata)? "" : "FAIL");
 
   PString room = data("room");
 
@@ -1607,7 +1794,7 @@ PString MCUH323EndPoint::SetRoomParams(const PStringToString & data)
 
   Conference *conference = conferenceManager.FindConferenceWithLock(room);
   if(conference == NULL)
-    return "OpenMCU-ru: Bad room";
+    return PString(PRODUCT_NAME_TEXT)+": Bad room";
   conference->Unlock();
 
   return RoomCtrlPage(room);
@@ -1767,8 +1954,8 @@ PString MCUH323EndPoint::Invite(PString room, PString memberName)
   }
 
   end:
-    PTRACE(1, trace_section << msg);
-    OpenMCU::Current().HttpWriteEventRoom(msg, room);
+    PTRACE(2, trace_section << msg);
+//    OpenMCU::Current().HttpWriteEventRoom(msg, room);
     return callToken;
 }
 
@@ -1948,7 +2135,7 @@ MCUH323Connection::MCUH323Connection(MCUH323EndPoint & _ep, unsigned callReferen
   if(!ep.IsRegisteredWithGatekeeper())
   {
     localAliasNames.RemoveAll();
-    localAliasNames.AppendString(OpenMCU::Current().GetName());
+//    localAliasNames.AppendString(OpenMCU::Current().GetName());
     localAliasNames.AppendString(requestedRoom);
   }
 
@@ -2032,12 +2219,14 @@ void MCUH323Connection::SetCallEndReason(CallEndReason reason, PSyncPoint * sync
     callEndTime = PTime();
   }
 
+/*
   if(requestedRoom != "")
   {
     PStringStream event;
     event << remotePartyAddress << " " << callEndReason << " " << callEndReasonEvent;
     OpenMCU::Current().HttpWriteEventRoom(event, requestedRoom);
   }
+*/
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -2101,7 +2290,7 @@ void MCUH323Connection::SetRequestedRoom()
 
 void MCUH323Connection::JoinConference(const PString & roomToJoin)
 {
-  PTRACE(1, trace_section << "Join conference: " << roomToJoin << " memberName: " << memberName);
+  PTRACE(2, trace_section << "Join conference: " << roomToJoin << " memberName: " << memberName);
 
   PWaitAndSignal m(connMutex);
 
@@ -2320,7 +2509,7 @@ H323Capability * MCUH323Connection::SelectRemoteCapability(H323Capabilities & ca
 
 void MCUH323Connection::OnSetLocalCapabilities()
 {
-  PTRACE(1, trace_section << "OnSetLocalCapabilities");
+  PTRACE(2, trace_section << "OnSetLocalCapabilities");
   PString audio_cap = GetEndpointParam("Audio codec(receive)");
   if(audio_cap.Left(5) == "G.711" && audio_cap.Right(4) == "{sw}") { audio_cap.Replace("{sw}","",TRUE,0); }
   PString video_cap = GetEndpointParam("Video codec(receive)", false);
@@ -3417,8 +3606,8 @@ void MCUH323Connection::SetRemoteName(const H323SignalPDU & pdu)
     remoteDisplayName = convert_cp1251_to_utf8(remoteDisplayName);
   }
 
-  PTRACE(1, trace_section << "SetRemoteName remoteUserName: " << remoteUserName);
-  PTRACE(1, trace_section << "SetRemoteName remoteDisplayName: " << remoteDisplayName);
+  PTRACE(2, trace_section << "SetRemoteName remoteUserName: " << remoteUserName);
+  PTRACE(2, trace_section << "SetRemoteName remoteDisplayName: " << remoteDisplayName);
   SetMemberName();
 }
 
@@ -3469,12 +3658,12 @@ void MCUH323Connection::SetMemberName()
 
   memberName = remoteDisplayName+" ["+address+"]";
 
-  PTRACE(1, trace_section << "SetMemberName remote account: " << GetRemoteUserName());
-  PTRACE(1, trace_section << "SetMemberName remoteUserName: " << remoteUserName);
-  PTRACE(1, trace_section << "SetMemberName remoteDisplayName: " << remoteDisplayName);
-  PTRACE(1, trace_section << "SetMemberName remotePartyAddress: " << remotePartyAddress);
-  PTRACE(1, trace_section << "SetMemberName remotePartyAliases: " << remoteAliasNames);
-  PTRACE(1, trace_section << "SetMemberName memberName: " << memberName);
+  PTRACE(2, trace_section << "SetMemberName remote account: " << GetRemoteUserName());
+  PTRACE(2, trace_section << "SetMemberName remoteUserName: " << remoteUserName);
+  PTRACE(2, trace_section << "SetMemberName remoteDisplayName: " << remoteDisplayName);
+  PTRACE(2, trace_section << "SetMemberName remotePartyAddress: " << remotePartyAddress);
+  PTRACE(2, trace_section << "SetMemberName remotePartyAliases: " << remoteAliasNames);
+  PTRACE(2, trace_section << "SetMemberName memberName: " << memberName);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -3490,39 +3679,9 @@ void MCUH323Connection::SendUserInput(const PString & value)
 
 BOOL MCUH323Connection::OnIncomingAudio(const uint64_t & timestamp, const void * buffer, PINDEX amount, unsigned sampleRate, unsigned channels)
 {
-/*
-  // If record file is open, write data to it
-  if (recordFile.IsOpen()) {
-    recordFile.Write(buffer, amount);
-
-    recordDuration += amount / 2;
-    if (recordDuration > recordLimit) {
-      recordFile.Close();
-      OnFinishRecording();
-    }
-    else {
-      const WORD * samples = (const WORD *)buffer;
-      PINDEX sampleCount = amount / 2;
-      BOOL silence = TRUE;
-      while (sampleCount-- > 0 && silence) {
-        if (*samples > 100 || *samples < -100)
-          silence = FALSE;
-        ++samples;
-      }
-      if (!silence)
-        recordSilenceCount = 0;
-      else {
-        recordSilenceCount += amount / 2;
-        if ((recordSilenceThreshold > 0) && (recordSilenceCount >= recordSilenceThreshold)) {
-          recordFile.Close();
-          OnFinishRecording();
-        }
-      }
-    }
-  }
-
-  else */ if (conferenceMember != NULL)
-    conferenceMember->WriteAudio(timestamp, buffer, amount, sampleRate, channels);
+  if(conferenceMember == NULL) return FALSE;
+  
+  conferenceMember->WriteAudio(timestamp, buffer, amount, sampleRate, channels);
 
   return TRUE;
 }
@@ -3616,8 +3775,7 @@ MCUConnection_ConferenceMember::MCUConnection_ConferenceMember(Conference * _con
 {
   memberType = MEMBER_TYPE_CONN;
   callToken = _callToken;
-//  if(callToken != "")
-    visible = TRUE;
+  visible = TRUE;
   isMCU = _isMCU;
   MCUURL url(_memberName);
   name = url.GetMemberName();
@@ -3669,7 +3827,7 @@ void MCUConnection_ConferenceMember::SetFreezeVideo(BOOL disable) const
       channel->SetFreeze(disable);
   }
   else
-    PTRACE(1, "MCU\tWrong connection in SetFreezeVideo for " << callToken);
+    PTRACE(2, "MCU\tWrong connection in SetFreezeVideo for " << callToken);
 
   conn->Unlock();
 }
@@ -3684,31 +3842,10 @@ void MCUConnection_ConferenceMember::SendUserInputIndication(const PString & str
     return;
 
   PStringStream msg;
-  PStringStream utfmsg;
-  if(conn->GetRemoteApplication().Find("MyPhone")!=P_MAX_INDEX)
-  {
-    static const int table[128] = { // cp1251 -> utf8 translation based on http://www.linux.org.ru/forum/development/3968525
-      0x82D0,0x83D0,  0x9A80E2,0x93D1,  0x9E80E2,0xA680E2,0xA080E2,0xA180E2,0xAC82E2,0xB080E2,0x89D0,0xB980E2,0x8AD0,0x8CD0,0x8BD0,0x8FD0,
-      0x92D1,0x9880E2,0x9980E2,0x9C80E2,0x9D80E2,0xA280E2,0x9380E2,0x9480E2,0,       0xA284E2,0x99D1,0xBA80E2,0x9AD1,0x9CD1,0x9BD1,0x9FD1,
-      0xA0C2,0x8ED0,  0x9ED1,  0x88D0,  0xA4C2,  0x90D2,  0xA6C2,  0xA7C2,  0x81D0,  0xA9C2,  0x84D0,0xABC2,  0xACC2,0xADC2,0xAEC2,0x87D0,
-      0xB0C2,0xB1C2,  0x86D0,  0x96D1,  0x91D2,  0xB5C2,  0xB6C2,  0xB7C2,  0x91D1,  0x9684E2,0x94D1,0xBBC2,  0x98D1,0x85D0,0x95D1,0x97D1,
-      0x90D0,0x91D0,  0x92D0,  0x93D0,  0x94D0,  0x95D0,  0x96D0,  0x97D0,  0x98D0,  0x99D0,  0x9AD0,0x9BD0,  0x9CD0,0x9DD0,0x9ED0,0x9FD0,
-      0xA0D0,0xA1D0,  0xA2D0,  0xA3D0,  0xA4D0,  0xA5D0,  0xA6D0,  0xA7D0,  0xA8D0,  0xA9D0,  0xAAD0,0xABD0,  0xACD0,0xADD0,0xAED0,0xAFD0,
-      0xB0D0,0xB1D0,  0xB2D0,  0xB3D0,  0xB4D0,  0xB5D0,  0xB6D0,  0xB7D0,  0xB8D0,  0xB9D0,  0xBAD0,0xBBD0,  0xBCD0,0xBDD0,0xBED0,0xBFD0,
-      0x80D1,0x81D1,  0x82D1,  0x83D1,  0x84D1,  0x85D1,  0x86D1,  0x87D1,  0x88D1,  0x89D1,  0x8AD1,0x8BD1,  0x8CD1,0x8DD1,0x8ED1,0x8FD1
-    };
-    for(PINDEX i=0;i<str.GetLength();i++){
-      unsigned int charcode=(BYTE)str[i];
-      if(charcode&128){
-        if((charcode=table[charcode&127])){
-          utfmsg << (char)charcode << (char)(charcode >> 8);
-          if(charcode >>= 16) utfmsg << (char)charcode;
-        }
-      } else utfmsg << (char)charcode;
-    }
-  }
-  else
-    utfmsg << str;
+  PString utfmsg;
+  if(conn->GetRemoteApplication().Find("MyPhone") != P_MAX_INDEX)
+    utfmsg = convert_cp1251_to_utf8(str);
+  else utfmsg = str;
 
   msg << "<font color=blue><b>" << name << "</b>: " << utfmsg << "</font>";
   OpenMCU::Current().HttpWriteEvent(msg);
@@ -3716,22 +3853,22 @@ void MCUConnection_ConferenceMember::SendUserInputIndication(const PString & str
   if(conn->GetConferenceMember() != this && conn->GetConferenceMember() != NULL)
   {
     conn->Unlock();
-    PTRACE(1, "MCU\tWrong connection in SendUserInputIndication for " << callToken);
+    PTRACE(2, "MCU\tWrong connection in SendUserInputIndication for " << callToken);
     return;
   }
 
-  PString sendmsg = "[" + conn->GetRemoteUserName() + "]: " + str;
+  PString sendmsg = "[" + conn->GetRemoteDisplayName() + "]: " + utfmsg;
 
   // unlock
   conn->Unlock();
 
-  if(str.GetLength()<10)
+  if(utfmsg.GetLength()<10)
   {
-    iISequence << str.Trim();
+    iISequence << utfmsg.Trim();
     iISequence=iISequence.Right(10);
   }
   else
-    iISequence=str.Trim();
+    iISequence=utfmsg.Trim();
 
   //cout << "*uii: " << iISequence << "\n";
   PINDEX hashPos=iISequence.FindLast("#");
@@ -4129,7 +4266,7 @@ int ConnectionMonitor::RTPTimeoutMonitor(MCUH323Connection * conn)
   }
   if(conn->rtpInputLostInterval >= conn->rtpInputTimeout)
   {
-    PTRACE(1, "MCU\tConnection: " << conn->GetCallToken() << ", " << conn->rtpInputTimeout << " sec timeout waiting incoming stream data.");
+    PTRACE(2, "MCU\tConnection: " << conn->GetCallToken() << ", " << conn->rtpInputTimeout << " sec timeout waiting incoming stream data.");
     return 1; // leave
   }
 

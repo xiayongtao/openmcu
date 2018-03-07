@@ -31,20 +31,20 @@
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+class VideoFrameStore
+{
+  public:
+    VideoFrameStore(int _w, int _h);
+    int width;
+    int height;
+    int frame_size;
+    time_t lastRead;
+    MCUBuffer bg_frame;
+    MCUBuffer logo_frame;
+};
+
 class VideoFrameStoreList {
   public:
-    class FrameStore
-    {
-      public:
-        FrameStore(int _w, int _h);
-        int width;
-        int height;
-        int frame_size;
-        time_t lastRead;
-        MCUBuffer bg_frame;
-        MCUBuffer logo_frame;
-    };
-    typedef MCUSharedList<FrameStore> MCUFrameStoreList;
     MCUFrameStoreList frameStoreList;
     typedef MCUFrameStoreList::shared_iterator shared_iterator;
     PMutex frameStoreListMutex;
@@ -75,8 +75,8 @@ class VideoFrameStoreList {
 #define VMPC_DEFALUT_SCALE_MODE                 1
 #define VMPC_DEFAULT_REALLOCATE_ON_DISCONNECT   1
 #define VMPC_DEFAULT_NEW_FROM_BEGIN             1
-#define VMPC_DEFAULT_MOCKUP_WIDTH               388
-#define VMPC_DEFAULT_MOCKUP_HEIGHT              218
+#define VMPC_DEFAULT_MOCKUP_WIDTH               640
+#define VMPC_DEFAULT_MOCKUP_HEIGHT              360
 
 #ifdef USE_FREETYPE
 # define VMPC_DEFAULT_LABEL_MASK               89
@@ -185,7 +185,6 @@ class VideoMixPosition {
     volatile int type; // static, vad, vad2, vad3
     int chosenVan; // always visible vad members (can switched between vad and vad2)
 #if USE_FREETYPE
-    typedef MCUSharedList<MCUSubtitles> MCUSubtitlesList;
     MCUSubtitlesList subtitlesList; // one per framestore
     unsigned minWidthForLabel;
 #endif
@@ -194,7 +193,7 @@ class VideoMixPosition {
     BOOL offline;
     BOOL shows_logo;
 
-    MCUSharedList<MCUBufferYUVArray> bufferList;
+    MCUBufferYUVArrayList bufferList;
     int vmpbuf_index;
     MCUBufferYUV tmpbuf;
 
@@ -442,6 +441,9 @@ class MCUSimpleVideoMixer : public MCUVideoMixer
 
     void RemoveFrameStore(VideoFrameStoreList::shared_iterator & it);
 
+    virtual void EnableSubtitles()  { enableSubtitles1 = 1; }
+    virtual void DisableSubtitles() { enableSubtitles1 = 0; }
+
   protected:
     virtual void ReallocatePositions();
     BOOL ReadMixedFrame(VideoFrameStoreList & srcFrameStores, void * buffer, int width, int height, PINDEX & amount);
@@ -449,6 +451,7 @@ class MCUSimpleVideoMixer : public MCUVideoMixer
     VideoFrameStoreList frameStores;  // list of framestores for data
 
     int specialLayout;
+    int enableSubtitles1;
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

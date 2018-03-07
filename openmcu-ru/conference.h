@@ -222,7 +222,9 @@ class ConferenceMember : public PObject
       */
     virtual void WriteAudio(const uint64_t & timestamp, const void * buffer, PINDEX amount, unsigned sampleRate, unsigned channels);
 
-    void WriteAudioAutoGainControl(const short * pcm, unsigned samplesPerFrame, unsigned codecChannels, unsigned sampleRate, unsigned level, float* currVolCoef, unsigned* signalLevel, float kManual);
+    void Gain(const short * pcm, unsigned samplesPerFrame, unsigned codecChannels, unsigned sampleRate);
+
+    BOOL DetectSilence(unsigned level, int tint);
 
     /**
       *  Called when the conference member wants to read a block of audio from the conference
@@ -300,12 +302,12 @@ class ConferenceMember : public PObject
     void SetJoined(BOOL isJoinedNow)
     { memberIsJoined = isJoinedNow; }
 
-    BOOL IsJoined() const
+    inline BOOL IsJoined() const
     { return memberIsJoined; }
 
     virtual void SetName(PString newName) {}
 
-    virtual PString GetName() const
+    inline virtual PString GetName() const
     { return name; }
 
     virtual PString GetNameID() const
@@ -317,7 +319,7 @@ class ConferenceMember : public PObject
     virtual void SetCallToken(const PString & token)
     { callToken = token; }
 
-    MemberTypes GetType()
+    inline MemberTypes GetType()
     { return memberType; }
 
     BOOL IsMCU()
@@ -328,6 +330,8 @@ class ConferenceMember : public PObject
 
     virtual unsigned GetAudioLevel() const
     { return audioLevel;  }
+
+    void SetGainDB(int newGainLevelDB);
 
     void ResetCounters()
     {
@@ -363,7 +367,7 @@ class ConferenceMember : public PObject
 
     MCUSimpleVideoMixer * videoMixer;
 
-    float kManualGain, kOutputGain;
+    float kManualGain, kOutputGain, constOverload, constGood, constGoodCheck;
     int kManualGainDB, kOutputGainDB;
 
     // functions H323Connection_ConferenceMember
@@ -383,11 +387,12 @@ class ConferenceMember : public PObject
 
     void SendRoomControl(int state);
     MCUJSON * AsJSON(int state = 1);
-
+    
 #if MCU_VIDEO
     int resizerRule; //0=cut, 1=stripes
     PTime firstFrameSendTime;
 #endif
+    BOOL inTalkBurst;
 
   protected:
     unsigned videoMixerNumber;
@@ -406,6 +411,11 @@ class ConferenceMember : public PObject
     unsigned write_audio_time_microseconds;
     unsigned write_audio_average_level;
     unsigned write_audio_write_counter;
+    
+    unsigned avgLevel, maxLevel, silenceDetectorFrameCounter, signalDetectorThreshold, silenceDeadbandFrames, signalDeadbandFrames, signalMinimum, silenceMaximum, signalFramesReceived, silenceFramesReceived;
+
+    int oldMasterVolumeDB; float oldMasterVolumeMultiplier;
+    int gainNeverCorrected, overloadCounter;
 
 #if MCU_VIDEO
     PINDEX totalVideoFramesSent;
@@ -534,7 +544,9 @@ class Conference : public PObject
     void HandleFeatureAccessCode(ConferenceMember & member, PString fac);
 
     void UpdateVideoMixOptions(ConferenceMember * member);
-    
+
+    void RemoveFromVideoMixers(ConferenceMember * member);
+
     unsigned short int VAdelay;
     unsigned short int VAtimeout;
     unsigned short int VAlevel;
@@ -551,11 +563,16 @@ class Conference : public PObject
     virtual void SetLastUsedTemplate(PString tplName);
     virtual void DeleteTemplate(PString tplName);
     virtual BOOL RewriteMembersConf();
+    virtual void EnableSubtitles(int enable);
 
     ConferenceRecorder * conferenceRecorder;
     ConferenceMember * pipeMember;
 
     BOOL GetForceScreenSplit() { return forceScreenSplit; }
+
+    BOOL SetMasterVolumeDB(int n);
+    inline int GetMasterVolumeDB(){ return masterVolumeDB; }
+    inline float GetMasterVolumeMultiplier(){ return masterVolumeMultiplier; }
 
     BOOL RecorderCheckSpace();
     BOOL StartRecorder();
@@ -563,8 +580,13 @@ class Conference : public PObject
 
     BOOL stopping;
     BOOL lockedTemplate;
+    BOOL muteNewUsers;
 
     int dialCountdown;
+
+    float masterVolumeMultiplier;
+    int masterVolumeDB;
+    int enableSubtitles;
 
   protected:
     ConferenceManager & manager;

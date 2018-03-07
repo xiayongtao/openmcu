@@ -1,3 +1,24 @@
+/*
+ * utils_json.h
+ *
+ * Copyright (C) 2015 Andrey Burbovskiy, OpenMCU-ru, All Rights Reserved
+ *
+ * The Initial Developer of the Original Code is Andrey Burbovskiy (andrewb@yandex.ru), All Rights Reserved
+ *
+ * The contents of this file are subject to the Mozilla Public License
+ * Version 1.0 (the "License"); you may not use this file except in
+ * compliance with the License. You may obtain a copy of the License at
+ * http://www.mozilla.org/MPL/
+ *
+ * Software distributed under the License is distributed on an "AS IS"
+ * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+ * the License for the specific language governing rights and limitations
+ * under the License.
+ *
+ * Contributor(s):  Andrey Burbovskiy (andrewb@yandex.ru)
+ *
+ */
+
 
 #include "precompile.h"
 
@@ -17,7 +38,7 @@ class MCUJSON
 {
   public:
 
-    typedef MCUSharedListSharedIterator<MCUSharedList<MCUJSON>, MCUJSON> shared_iterator;
+    typedef MCUSharedListSharedIterator<MCUJSONList, MCUJSON> shared_iterator;
     const shared_iterator & end() const { return iterator_end; }
 
     enum JsonTypes
@@ -31,7 +52,7 @@ class MCUJSON
       JSON_OBJECT
     };
 
-    MCUJSON(JsonTypes type = JSON_OBJECT, const std::string &key = "", int size = 256);
+    MCUJSON(JsonTypes type = JSON_OBJECT, const std::string &key = "", int size = MCU_SHARED_LIST_SIZE);
     ~MCUJSON();
 
     static MCUJSON * Null();
@@ -51,8 +72,8 @@ class MCUJSON
     static MCUJSON * Double(const double value);
     static MCUJSON * String(const std::string &key, const std::string &value);
     static MCUJSON * String(const std::string &value);
-    static MCUJSON * Array(const std::string &key = "", int size = 256);
-    static MCUJSON * Object(const std::string &key = "", int size = 256);
+    static MCUJSON * Array(const std::string &key = "", int size = MCU_SHARED_LIST_SIZE);
+    static MCUJSON * Object(const std::string &key = "", int size = MCU_SHARED_LIST_SIZE);
 
     bool Insert(MCUJSON *json);
     bool Insert(const std::string &key, bool value);
@@ -90,7 +111,7 @@ class MCUJSON
     MCUJSON & operator = (const char *value);
     MCUJSON & operator = (const std::string &value);
     MCUJSON & operator = (const PString &value);
-    MCUJSON & operator = (MCUSharedList<MCUJSON> *value);
+    MCUJSON & operator = (MCUJSONList *value);
     MCUJSON & operator = (MCUJSON &json);
 
     bool operator == (MCUJSON &json)
@@ -116,7 +137,7 @@ class MCUJSON
     long long value_int;
     double value_double;
     std::string value_string;
-    MCUSharedList<MCUJSON> * value_array;
+    MCUJSONList * value_array;
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

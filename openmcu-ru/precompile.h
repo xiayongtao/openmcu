@@ -2,6 +2,10 @@
 #ifndef _MCU_PRECOMPILE_H
 #define _MCU_PRECOMPILE_H
 
+#define	PRODUCT_NAME_TEXT	"HPKMCU"
+#define	EXE_NAME_TEXT	        "HPKMCU"
+#define	MANUFACTURER_TEXT	"Happok Team"
+
 // msvc warnings
 #ifdef _WIN32
 #pragma warning(disable:4100)

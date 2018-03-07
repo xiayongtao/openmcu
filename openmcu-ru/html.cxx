@@ -706,6 +706,11 @@ VideoPConfigPage::VideoPConfigPage(PHTTPServiceProcess & app,const PString & tit
 #endif
   s << IntegerField("Video frame rate", JsLocal("video_frame_rate"), cfg.GetString("Video frame rate", DefaultVideoFrameRate), 1, MCU_MAX_FRAME_RATE, 0, "range: 1.."+PString(MCU_MAX_FRAME_RATE)+" (for outgoing video)");
 
+  int scaleFilterType = OpenMCU::Current().GetScaleFilterType();
+  s << SelectField(VideoScaleFilterKey, VideoScaleFilterKey, OpenMCU::GetScaleFilterName(scaleFilterType), MCUScaleFilterNames);
+
+  s << IntegerField(VideoInterPacketDelayKey, JsLocal("video_inter_packet_delay"), cfg.GetString(VideoInterPacketDelayKey, 2), 0, 10, 0, "range: 0..10");
+
   s << SeparatorField("H.263");
   s << IntegerField("H.263 Max Bit Rate", "H.263 "+JsLocal("max_bit_rate"), cfg.GetString("H.263 Max Bit Rate"), MCU_MIN_BIT_RATE/1000, MCU_MAX_BIT_RATE/1000, 0, "range "+PString(MCU_MIN_BIT_RATE/1000)+".."+PString(MCU_MAX_BIT_RATE/1000)+" kbit (for outgoing video, 0 disable)");
   s << IntegerField("H.263 Tx Key Frame Period", "H.263 "+JsLocal("tx_key_frame_period"), cfg.GetString("H.263 Tx Key Frame Period"), 0, 600, 0, "range 0..600 (for outgoing video, the number of pictures in a group of pictures, or 0 for intra_only)");
@@ -830,6 +835,8 @@ H323EndpointsPConfigPage::H323EndpointsPConfigPage(PHTTPServiceProcess & app,con
   optionNames.AppendString(PasswordKey);
   optionNames.AppendString(PingIntervalKey);
   optionNames.AppendString("H.323 call processing");
+  optionNames.AppendString("Input Gain");
+  optionNames.AppendString("Output Gain");
 
   optionNames.AppendString(HostKey);
   optionNames.AppendString(PortKey);
@@ -932,6 +939,8 @@ H323EndpointsPConfigPage::H323EndpointsPConfigPage(PHTTPServiceProcess & app,con
       s2 += RowArray()+EmptyInputItem(name)+"</tr>";
       s2 += RowArray()+"Keep-Alive "+JsLocal("interval")+SelectItem(name, scfg.GetString(PingIntervalKey, "Disable"), PingIntervalSelect)+"</tr>";
       s2 += RowArray()+JsLocal("internal_call_processing")+SelectItem(name, scfg.GetString("H.323 call processing", "direct"), "full,direct")+"</tr>";
+      s2 += RowArray()+EmptyInputItem(name)+"</tr>";
+      s2 += RowArray()+EmptyInputItem(name)+"</tr>";
       s2 += EndItemArray();
       s << s2;
     } else {
@@ -942,6 +951,8 @@ H323EndpointsPConfigPage::H323EndpointsPConfigPage(PHTTPServiceProcess & app,con
       s2 += RowArray()+JsLocal("name_password")+StringItem(name, scfg.GetString(PasswordKey))+"</tr>";
       s2 += RowArray()+"Keep-Alive "+JsLocal("interval")+SelectItem(name, scfg.GetString(PingIntervalKey), ","+PingIntervalSelect)+"</tr>";
       s2 += RowArray()+JsLocal("internal_call_processing")+SelectItem(name, scfg.GetString("H.323 call processing", ""), ",full,direct")+"</tr>";
+      s2 += RowArray(name, TRUE)+"Input Gain"+SelectItem(name, scfg.GetString("Input Gain"), ","+InputOutputGainSelect)+"</tr>";
+      s2 += RowArray(name, TRUE)+"Output Gain"+SelectItem(name, scfg.GetString("Output Gain"), ","+InputOutputGainSelect)+"</tr>";
       s2 += EndItemArray();
       s << s2;
     }
@@ -1114,6 +1125,8 @@ SipEndpointsPConfigPage::SipEndpointsPConfigPage(PHTTPServiceProcess & app,const
   optionNames.AppendString(PasswordKey);
   optionNames.AppendString(PingIntervalKey);
   optionNames.AppendString("SIP call processing");
+  optionNames.AppendString("Input Gain");
+  optionNames.AppendString("Output Gain");
 
   optionNames.AppendString(HostKey);
   optionNames.AppendString(PortKey);
@@ -1225,6 +1238,8 @@ SipEndpointsPConfigPage::SipEndpointsPConfigPage(PHTTPServiceProcess & app,const
       s2 += RowArray()+EmptyInputItem(name)+"</tr>";
       s2 += RowArray()+"Keep-Alive "+JsLocal("interval")+SelectItem(name, scfg.GetString(PingIntervalKey, "Disable"), PingIntervalSelect)+"</tr>";
       s2 += RowArray()+JsLocal("internal_call_processing")+SelectItem(name, scfg.GetString("SIP call processing", "redirect"), "full,redirect")+"</tr>";
+      s2 += RowArray()+EmptyInputItem(name)+"</tr>";
+      s2 += RowArray()+EmptyInputItem(name)+"</tr>";
       s2 += EndItemArray();
       s << s2;
     } else {
@@ -1235,6 +1250,8 @@ SipEndpointsPConfigPage::SipEndpointsPConfigPage(PHTTPServiceProcess & app,const
       s2 += RowArray()+JsLocal("name_password")+StringItem(name, scfg.GetString(PasswordKey))+"</tr>";
       s2 += RowArray()+"Keep-Alive "+JsLocal("interval")+SelectItem(name, scfg.GetString(PingIntervalKey), ","+PingIntervalSelect)+"</tr>";
       s2 += RowArray()+JsLocal("internal_call_processing")+SelectItem(name, scfg.GetString("SIP call processing", ""), ",full,redirect")+"</tr>";
+      s2 += RowArray(name, TRUE)+"Input Gain"+SelectItem(name, scfg.GetString("Input Gain"), ","+InputOutputGainSelect)+"</tr>";
+      s2 += RowArray(name, TRUE)+"Output Gain"+SelectItem(name, scfg.GetString("Output Gain"), ","+InputOutputGainSelect)+"</tr>";
       s2 += EndItemArray();
       s << s2;
     }
@@ -2134,7 +2151,7 @@ BOOL WelcomePage::OnGET (PHTTPServer & server, const PURL &url, const PMIMEInfo 
     if((q=request.Find("?"))!=P_MAX_INDEX) { request=request.Mid(q+1,P_MAX_INDEX); PURL::SplitQueryVars(request,data); }
   }
   PStringStream shtml;
-  BeginPage(shtml,"OpenMCU-ru","window.l_welcome","window.l_info_welcome");
+  BeginPage(shtml,PRODUCT_NAME_TEXT,"window.l_welcome","window.l_info_welcome");
 
   PString timeFormat = "yyyyMMdd hhmmss z";
   PTime now;
@@ -2142,7 +2159,7 @@ BOOL WelcomePage::OnGET (PHTTPServer & server, const PURL &url, const PMIMEInfo 
 
   shtml << "<br><b>Monitor Text (<span style='cursor:pointer;text-decoration:underline' onclick='javascript:{if(document.selection){var range=document.body.createTextRange();range.moveToElementText(document.getElementById(\"monitorTextId\"));range.select();}else if(window.getSelection){var range=document.createRange();range.selectNode(document.getElementById(\"monitorTextId\"));window.getSelection().addRange(range);}}'>select all</span>)</b><div style='padding:5px;border:1px dotted #595;width:100%;height:auto;max-height:300px;overflow:auto'><pre style='margin:0px;padding:0px' id='monitorTextId'>"
 #ifdef GIT_REVISION
-        << "OpenMCU-ru REVISION " << MCU_STRINGIFY(GIT_REVISION) << "\n"
+        << PRODUCT_NAME_TEXT << " REVISION " << MCU_STRINGIFY(GIT_REVISION) << "\n"
 #endif
 
               << "Program: "          << OpenMCU::Current().GetProductName() << "\n"
@@ -2171,7 +2188,7 @@ BOOL WelcomePage::OnGET (PHTTPServer & server, const PURL &url, const PMIMEInfo 
   { PStringStream message; PTime now; message
       << "HTTP/1.1 200 OK\r\n"
       << "Date: " << now.AsString(PTime::RFC1123, PTime::GMT) << "\r\n"
-      << "Server: OpenMCU-ru\r\n"
+      << "Server: " << PRODUCT_NAME_TEXT << "\r\n"
       << "MIME-Version: 1.0\r\n"
       << "Cache-Control: no-cache, must-revalidate\r\n"
       << "Expires: Sat, 26 Jul 1997 05:00:00 GMT\r\n"
@@ -2238,14 +2255,16 @@ BOOL MainStatusPage::OnGET (PHTTPServer & server, const PURL &url, const PMIMEIn
 
   if(data.Contains("start"))
     body = OpenMCU::Current().GetEndpoint().GetRoomStatusJSStart();
-  else
-    body = OpenMCU::Current().GetEndpoint().GetRoomStatusJS();
+  else if(data.Contains("json"))
+    body = OpenMCU::Current().GetEndpoint().GetRoomStatusJson();
+  else 
+      body = OpenMCU::Current().GetEndpoint().GetRoomStatusJS();
   PINDEX length = body.GetLength();
 
   PStringStream message;
   message << "HTTP/1.1 200 OK\r\n"
           << "Date: " << PTime().AsString(PTime::RFC1123, PTime::GMT) << "\r\n"
-          << "Server: OpenMCU-ru\r\n"
+          << "Server: " << PRODUCT_NAME_TEXT << "\r\n"
           << "MIME-Version: 1.0\r\n"
           << "Cache-Control: no-cache, must-revalidate\r\n"
           << "Expires: Sat, 26 Jul 1997 05:00:00 GMT\r\n"
@@ -2438,7 +2457,7 @@ BOOL JpegFrameHTTP::OnGET (PHTTPServer & server, const PURL &url, const PMIMEInf
   PStringStream message;
   message << "HTTP/1.1 200 OK\r\n"
           << "Date: " << now.AsString(PTime::RFC1123, PTime::GMT) << "\r\n"
-          << "Server: OpenMCU-ru\r\n"
+          << "Server: " << PRODUCT_NAME_TEXT << "\r\n"
           << "MIME-Version: 1.0\r\n"
           << "Cache-Control: no-cache, must-revalidate\r\n"
           << "Expires: Sat, 26 Jul 1997 05:00:00 GMT\r\n"
@@ -2493,7 +2512,7 @@ BOOL InteractiveHTTP::OnGET (PHTTPServer & server, const PURL &url, const PMIMEI
 
   message << "HTTP/1.1 200 OK\r\n"
           << "Date: " << now.AsString(PTime::RFC1123, PTime::GMT) << "\r\n"
-          << "Server: OpenMCU-ru\r\n"
+          << "Server: " << PRODUCT_NAME_TEXT << "\r\n"
           << "MIME-Version: 1.0\r\n"
           << "Cache-Control: no-cache, must-revalidate\r\n"
           << "Expires: Sat, 26 Jul 1997 05:00:00 GMT\r\n"
@@ -2524,7 +2543,8 @@ BOOL InteractiveHTTP::OnGET (PHTTPServer & server, const PURL &url, const PMIMEI
         << "p." << ep.GetConferenceOptsJavascript(*conference) << "\n"
         << "p." << ep.GetAddressBookOptsJavascript() << "\n"
         << "p.tl=Array" << conference->GetTemplateList() << "\n"
-        << "p.seltpl=\"" << conference->GetSelectedTemplateName() << "\"\n";
+        << "p.seltpl=\"" << conference->GetSelectedTemplateName() << "\"\n"
+        << "p.mvdb(" << conference->masterVolumeDB << ")\r\n";
 
     // unlock conference
     conference->Unlock();
@@ -2773,7 +2793,7 @@ BOOL SelectRoomPage::OnGET (PHTTPServer & server, const PURL &url, const PMIMEIn
     PStringStream message; PTime now; message
       << "HTTP/1.1 200 OK\r\n"
       << "Date: " << now.AsString(PTime::RFC1123, PTime::GMT) << "\r\n"
-      << "Server: OpenMCU-ru\r\n"
+      << "Server: " << PRODUCT_NAME_TEXT << "\r\n"
       << "MIME-Version: 1.0\r\n"
       << "Cache-Control: no-cache, must-revalidate\r\n"
       << "Expires: Sat, 26 Jul 1997 05:00:00 GMT\r\n"
@@ -2794,9 +2814,11 @@ BOOL SelectRoomPage::Post(PHTTPRequest & request,
                           const PStringToString & data,
                           PHTML & msg)
 {
-  PString room = data("room");
-  msg << OpenMCU::Current().GetEndpoint().SetRoomParams(data);
-  return TRUE;
+    PString room = data("room");
+	PString rdata;
+    msg << OpenMCU::Current().GetEndpoint().SetRoomParams(data, rdata);
+	msg << rdata;
+    return TRUE;
 }
 
 ///////////////////////////////////////////////////////////////
@@ -2830,7 +2852,7 @@ BOOL RecordsBrowserPage::OnGET (PHTTPServer & server, const PURL &url, const PMI
       PStringStream message; PTime now; message
         << "HTTP/1.1 404 Not Found\r\n"
         << "Date: " << now.AsString(PTime::RFC1123, PTime::GMT) << "\r\n"
-        << "Server: OpenMCU-ru\r\n"
+        << "Server: " << PRODUCT_NAME_TEXT << "\r\n"
         << "MIME-Version: 1.0\r\n"
         << "Cache-Control: no-cache, must-revalidate\r\n"
         << "Expires: Sat, 26 Jul 1997 05:00:00 GMT\r\n"
@@ -2850,7 +2872,7 @@ BOOL RecordsBrowserPage::OnGET (PHTTPServer & server, const PURL &url, const PMI
       PStringStream message; PTime now; message
         << "HTTP/1.1 403 Forbidden\r\n"
         << "Date: " << now.AsString(PTime::RFC1123, PTime::GMT) << "\r\n"
-        << "Server: OpenMCU-ru\r\n"
+        << "Server: " << PRODUCT_NAME_TEXT << "\r\n"
         << "MIME-Version: 1.0\r\n"
         << "Cache-Control: no-cache, must-revalidate\r\n"
         << "Expires: Sat, 26 Jul 1997 05:00:00 GMT\r\n"
@@ -2866,7 +2888,7 @@ BOOL RecordsBrowserPage::OnGET (PHTTPServer & server, const PURL &url, const PMI
     PStringStream message; PTime now; message
       << "HTTP/1.1 200 OK\r\n"
       << "Date: " << now.AsString(PTime::RFC1123, PTime::GMT) << "\r\n"
-      << "Server: OpenMCU-ru\r\n"
+      << "Server: " << PRODUCT_NAME_TEXT << "\r\n"
       << "MIME-Version: 1.0\r\n"
       << "Cache-Control: no-cache, must-revalidate\r\n"
       << "Expires: Sat, 26 Jul 1997 05:00:00 GMT\r\n"
@@ -2926,7 +2948,7 @@ BOOL RecordsBrowserPage::OnGET (PHTTPServer & server, const PURL &url, const PMI
     PStringStream message; PTime now; message
       << "HTTP/1.1 404 Not Found\r\n"
       << "Date: " << now.AsString(PTime::RFC1123, PTime::GMT) << "\r\n"
-      << "Server: OpenMCU-ru\r\n"
+      << "Server: " << PRODUCT_NAME_TEXT << "\r\n"
       << "MIME-Version: 1.0\r\n"
       << "Cache-Control: no-cache, must-revalidate\r\n"
       << "Expires: Sat, 26 Jul 1997 05:00:00 GMT\r\n"
@@ -3026,12 +3048,13 @@ BOOL RecordsBrowserPage::OnGET (PHTTPServer & server, const PURL &url, const PMI
 
   if(fileList.GetSize()==0) shtml << "<script>document.write(window.l_dir_no_records);</script> " << freeSpace; else
   {
+    PString sm=PString("&nbsp;<span style='color:red'>&") + ((sortMode&1)?'u':'d') + "Arr;</span>";
     shtml << freeSpace << "<table style='border:2px solid #82b8e3'><tr>"
       << "<th class='h1' style='color:#afc'>N</th>"
-      << "<th class='h1'><a style='color:#fff' href='/Records?sort=" << ((sortMode!=0)?'0':'1') << "'><script>document.write(window.l_startdatetime)</script></a></th>"
-      << "<th class='h1'><a style='color:#fff' href='/Records?sort=" << ((sortMode!=2)?'2':'3') << "'><script>document.write(window.l_connections_word_room)</script></a></th>"
-      << "<th class='h1'><a style='color:#fff' href='/Records?sort=" << ((sortMode!=4)?'4':'5') << "'><script>document.write(window.l_resolution)</script></th>"
-      << "<th class='h1'><a style='color:#fff' href='/Records?sort=" << ((sortMode!=6)?'6':'7') << "'><script>document.write(window.l_filesize)</script></th>"
+      << "<th class='h1'><a style='color:#fff' href='/Records?sort=" << ((sortMode!=0)?'0':'1') << "'><script>document.write(window.l_startdatetime)</script>" << ((!(sortMode>>1))?sm:"") << "</a></th>"
+      << "<th class='h1'><a style='color:#fff' href='/Records?sort=" << ((sortMode!=2)?'2':'3') << "'><script>document.write(window.l_connections_word_room)</script>" << (((sortMode>>1)==1)?sm:"") << "</a></th>"
+      << "<th class='h1'><a style='color:#fff' href='/Records?sort=" << ((sortMode!=4)?'4':'5') << "'><script>document.write(window.l_resolution)</script>" << (((sortMode>>1)==2)?sm:"") << "</a></th>"
+      << "<th class='h1'><a style='color:#fff' href='/Records?sort=" << ((sortMode!=6)?'6':'7') << "'><script>document.write(window.l_filesize)</script>" << (((sortMode>>1)==3)?sm:"") << "</a></th>"
       << "<th class='h1' style='color:#afc'><script>document.write(window.l_download)</script></th>"
       << "<th class='h1' style='color:#afc'><script>document.write(window.l_delete)</script></th>"
       << "</tr>";
@@ -3043,7 +3066,7 @@ BOOL RecordsBrowserPage::OnGET (PHTTPServer & server, const PURL &url, const PMI
         { PString dateTime1 = s.Left(pos1); s=s.Mid(pos1+2,P_MAX_INDEX);
           PString videoResolution1; pos1=s.Find('.'); PINDEX pos2=s.Find(',');
           if(pos1!=P_MAX_INDEX) videoResolution1=s.Left(pos1); else videoResolution1=s.Left(pos2);
-          PINDEX fileSize1 = s.Mid(pos2+1,P_MAX_INDEX).AsInteger();
+          unsigned long fileSize1 = strtoul(s.Mid(pos2+1,P_MAX_INDEX),NULL,10);
           for(PINDEX j=i+1;j<fileList.GetSize(); j++)
           { PString s=fileList[j]; pos1=s.Find("__"); if(pos1!=P_MAX_INDEX)
             { PString roomName2 = s.Left(pos1); s=s.Mid(pos1+2,P_MAX_INDEX);
@@ -3051,18 +3074,27 @@ BOOL RecordsBrowserPage::OnGET (PHTTPServer & server, const PURL &url, const PMI
               { PString dateTime2 = s.Left(pos1); s=s.Mid(pos1+2,P_MAX_INDEX);
                 PString videoResolution2; pos1=s.Find('.'); PINDEX pos2=s.Find(',');
                 if(pos1!=P_MAX_INDEX) videoResolution2=s.Left(pos1); else videoResolution2=s.Left(pos2);
-                PINDEX fileSize2 = s.Mid(pos2+1,P_MAX_INDEX).AsInteger();
-
-                if     ((!sortMode) && (!(dateTime2 >= dateTime1))){}
-                else if((sortMode==1) && (dateTime2 >= dateTime1)) {}
-                else if((sortMode==2) && (roomName2 >= roomName1)) {}
-                else if((sortMode==3) && (roomName2 <= roomName1)) {}
-                else if((sortMode==4) && (videoResolution2 <= videoResolution1)) {}
-                else if((sortMode==5) && (videoResolution2 >= videoResolution1)) {}
-                else if((sortMode==6) && (fileSize2 <= fileSize1)) {}
-                else if((sortMode==7) && (fileSize2 >= fileSize1)) {}
-                else { PString s=fileList[i]; fileList[i]=fileList[j]; fileList[j]=s; } // or just swap PString pointers?
-
+                unsigned long fileSize2 = strtoul(s.Mid(pos2+1,P_MAX_INDEX),NULL,10);
+                BOOL sw;
+                switch(sortMode)
+                {
+                  case 1:  sw=strcmp(dateTime2, dateTime1)<0; break;
+                  case 2:  sw=strcmp(roomName2, roomName1)>0; break;
+                  case 3:  sw=strcmp(roomName2, roomName1)<0; break;
+                  case 4:  sw=strcmp(videoResolution2, videoResolution1)>0; break;
+                  case 5:  sw=strcmp(videoResolution2, videoResolution1)<0; break;
+                  case 6:  sw=fileSize2 > fileSize1; break;
+                  case 7:  sw=fileSize2 < fileSize1; break;
+                  default: sw=strcmp(dateTime2, dateTime1)>0; break;
+                }
+                if(sw)
+                {
+                  swap(fileList[i], fileList[j]);
+                  dateTime1=dateTime2;
+                  roomName1=roomName2;
+                  videoResolution1=videoResolution2;
+                  fileSize1=fileSize2;
+                }
               }
             }
           }
@@ -3101,7 +3133,7 @@ BOOL RecordsBrowserPage::OnGET (PHTTPServer & server, const PURL &url, const PMI
   { PStringStream message; PTime now; message
       << "HTTP/1.1 200 OK\r\n"
       << "Date: " << now.AsString(PTime::RFC1123, PTime::GMT) << "\r\n"
-      << "Server: OpenMCU-ru\r\n"
+      << "Server: " << PRODUCT_NAME_TEXT << "\r\n"
       << "MIME-Version: 1.0\r\n"
       << "Cache-Control: no-cache, must-revalidate\r\n"
       << "Expires: Sat, 26 Jul 1997 05:00:00 GMT\r\n"

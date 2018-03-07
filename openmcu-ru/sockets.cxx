@@ -1,3 +1,26 @@
+/*
+ * sockets.cxx
+ *
+ * Copyright (C) 2014-2015 Andrey Burbovskiy, OpenMCU-ru, All Rights Reserved
+ * Copyright (C) 2015 Konstantin Yeliseyev, OpenMCU-ru, All Rights Reserved
+ *
+ * The Initial Developer of the Original Code is Andrey Burbovskiy (andrewb@yandex.ru), All Rights Reserved
+ *
+ * The contents of this file are subject to the Mozilla Public License
+ * Version 1.0 (the "License"); you may not use this file except in
+ * compliance with the License. You may obtain a copy of the License at
+ * http://www.mozilla.org/MPL/
+ *
+ * Software distributed under the License is distributed on an "AS IS"
+ * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+ * the License for the specific language governing rights and limitations
+ * under the License.
+ *
+ * Contributor(s):  Andrey Burbovskiy (andrewb@yandex.ru)
+ *                  Konstantin Yeliseyev (kay27@bk.ru)
+ *
+ */
+
 
 #include "precompile.h"
 #include "mcu.h"
@@ -96,6 +119,7 @@ BOOL MCUSocket::GetFromIP(PString & ip, const PString & host, const PString & po
     PTRACE(1, "MCUSocket error " << errno << " " << strerror(errno));
     return FALSE;
   }
+  freeaddrinfo(res);
 
   sockaddr_in name;
   socklen_t namelen = sizeof(name);

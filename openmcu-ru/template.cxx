@@ -3,6 +3,10 @@
 #include "conference.h"
 #include "mcu.h"
 
+extern "C" {
+  unsigned char linear2ulaw(int pcm_val);
+}
+
 PString Conference::SaveTemplate(PString tplName)
 {
   PTRACE(4,"Conference\tSaving template \"" << tplName << "\"");
@@ -109,7 +113,7 @@ PString Conference::SaveTemplate(PString tplName)
     if(member->disableVAD) value3++;
     t << "  MEMBER "
       << (member->autoDial?"1":"0") << ", "
-      << member->muteMask << "/" << (member->kManualGainDB+20) << "/" << (member->kOutputGainDB+20) << ", "
+      << member->muteMask << ", "
       << value3 << ", "
       << (member->chosenVan?"1":"0") << ", "
       << member->GetVideoMixerNumber() << ", "
@@ -124,9 +128,9 @@ PString Conference::SaveTemplate(PString tplName)
 
 void Conference::LoadTemplate(PString tpl)
 {
-  PTRACE(4,"Conference\tLoading template");
-  confTpl=tpl;
+  PTRACE(3,"Conference\tLoadtemplate");
   if(tpl.IsEmpty()) return;
+  confTpl=tpl;
   PStringArray lines=tpl.Lines();
   int level=0;
   unsigned mixerId=0;
@@ -147,7 +151,17 @@ void Conference::LoadTemplate(PString tpl)
         PString value=l.Mid(space+1,P_MAX_INDEX).LeftTrim();
         if(cmd=="GLOBAL_MUTE") muteUnvisible=(value=="on");
         else if(cmd=="CONTROL_TYPE") moderated=(value=="manual");
-        else if(cmd=="VAD_VALUES") {PStringArray v=value.Tokenise(",");if(v.GetSize()==3){ VAdelay=(unsigned short int)(v[0].Trim().AsInteger()); VAtimeout=(unsigned short int)(v[1].Trim().AsInteger()); VAlevel=(unsigned short int)(v[2].Trim().AsInteger());}}
+        else if(cmd=="VAD_VALUES")
+        {
+          PStringArray v=value.Tokenise(",");
+          if(v.GetSize()==3)
+          {
+            VAdelay  =(unsigned short int)(v[0].Trim().AsInteger());
+            VAtimeout=(unsigned short int)(v[1].Trim().AsInteger());
+            VAlevel  =(unsigned short int)(v[2].Trim().AsInteger());
+            if(VAlevel>99) VAlevel=linear2ulaw(VAlevel) ^ 0xff;
+          }
+        }
         else if(cmd=="MIXER")
         {
           mixerId = value.AsInteger();
@@ -265,14 +279,14 @@ void Conference::LoadTemplate(PString tpl)
             PStringArray maskAndGain = v[1].Tokenise("/");
             BOOL hasGainOptions = (maskAndGain.GetSize() > 1);
             if(hasGainOptions)
-            {
+            { // stay compatible with temp. style templates:
               member->SetChannelState(maskAndGain[0].AsInteger());
-              member->kManualGainDB = maskAndGain[1].AsInteger()-20;
-              member->kOutputGainDB = maskAndGain[2].AsInteger()-20;
-              member->kManualGain=(float)pow(10.0,((float)member->kManualGainDB)/20.0);
-              member->kOutputGain=(float)pow(10.0,((float)member->kOutputGainDB)/20.0);
+//              member->kManualGainDB = maskAndGain[1].AsInteger()-20;
+//              member->kOutputGainDB = maskAndGain[2].AsInteger()-20;
+//              member->kManualGain=(float)pow(10.0,((float)member->kManualGainDB)/20.0);
+//              member->kOutputGain=(float)pow(10.0,((float)member->kOutputGainDB)/20.0);
             }
-            else // stay compatible with old-style templates:
+            else 
             {
               member->muteMask      = v[1].AsInteger();
             }
@@ -311,20 +325,33 @@ void Conference::LoadTemplate(PString tpl)
   if(!lockedTemplate) return; // room not locked - don't touch member list
 
 
-  for(MCUMemberList::shared_iterator it = memberList.begin(); it != memberList.end(); ++it)
   {
-    ConferenceMember *member = *it;
-    if(member->IsSystem())
-      continue;
-    PString name = member->GetName();
-    if(validatedMembers.GetStringsIndex(name) == P_MAX_INDEX) // remove unwanted members
+    PWaitAndSignal m(memberListMutex);
+    for(MCUMemberList::shared_iterator it = memberList.begin(); it != memberList.end(); ++it)
     {
-      ConferenceMemberId id = member->GetID();
-      PTRACE(6,"Conference\tLoading template - closing connection with " << name << " (id " << id << ")" << flush);
-      member->Close();
+      ConferenceMember *member = *it;
+      if(member->IsSystem()) continue;
+      PString name = member->GetName();
+      if(validatedMembers.GetStringsIndex(name) == P_MAX_INDEX) // remove unwanted members
+      {
+        PTRACE(6,"Conference\tLoading template - closing connection with " << name << " (id " << member->GetID() << ")" << flush);
+        member->SetAutoDial(FALSE);
+        if(member->IsOnline())
+        {
+          MCUH323Connection * conn = OpenMCU::Current().GetEndpoint().FindConnectionWithLock(member->GetCallToken());
+          if(conn)
+          {
+            conn->SetConferenceMember(NULL);
+            conn->Unlock();
+          }
+        }
+        member->Close();
+        RemoveFromVideoMixers(member);
+        if(memberList.Erase(it)) delete member;
+      }
     }
   }
-
+  
 }
 
 PString Conference::GetTemplateList()

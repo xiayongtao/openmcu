@@ -1,3 +1,25 @@
+/*
+ * recorder.cxx
+ *
+ * Copyright (C) 2014-2015 Andrey Burbovskiy, OpenMCU-ru, All Rights Reserved
+ * Copyright (C) 2015 Konstantin Yeliseyev, OpenMCU-ru, All Rights Reserved
+ *
+ * The Initial Developer of the Original Code is Andrey Burbovskiy (andrewb@yandex.ru), All Rights Reserved
+ *
+ * The contents of this file are subject to the Mozilla Public License
+ * Version 1.0 (the "License"); you may not use this file except in
+ * compliance with the License. You may obtain a copy of the License at
+ * http://www.mozilla.org/MPL/
+ *
+ * Software distributed under the License is distributed on an "AS IS"
+ * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+ * the License for the specific language governing rights and limitations
+ * under the License.
+ *
+ * Contributor(s):  Andrey Burbovskiy (andrewb@yandex.ru)
+ *                  Konstantin Yeliseyev (kay27@bk.ru)
+ *
+ */
 
 #include "precompile.h"
 #include "mcu.h"
@@ -197,21 +219,23 @@ BOOL ConferenceRecorder::Start()
   video_framerate = cfg.GetInteger(RecorderFrameRateKey, DefaultRecorderFrameRate);
 
   unsigned max_fs = GetVideoMacroBlocks(video_width, video_height);
-  for(int i = 0; recorder_resolutions[i].macroblocks != 0; ++i)
+  for(int i = 0; recorder_resolutions[i].width; i++)
   {
-    if(max_fs > recorder_resolutions[i].macroblocks && recorder_resolutions[i+1].macroblocks != 0)
+    if((max_fs > recorder_resolutions[i].macroblocks) && recorder_resolutions[i+1].width)
       continue;
 
     if(video_width != recorder_resolutions[i].width || video_height != recorder_resolutions[i].height)
-    { PTRACE(1, trace_section << "resolution changed to " << video_width << "x" << video_height); }
+    {
+      video_width = recorder_resolutions[i].width;
+      video_height = recorder_resolutions[i].height;
+      PTRACE(1, trace_section << "resolution changed to " << video_width << "x" << video_height << " (" << max_fs << " macroblocks)");
+    }
 
-    video_width = recorder_resolutions[i].width;
-    video_height = recorder_resolutions[i].height;
     break;
   }
 
-  if(video_framerate < 1)       { video_framerate = 1; PTRACE(1, trace_section << "resolution changed to 1"); }
-  else if(video_framerate > 30) { video_framerate = 30; PTRACE(1, trace_section << "resolution changed to 30"); }
+  if(video_framerate < 1)        { video_framerate =   1; PTRACE(1, trace_section << "frame rate changed to " << video_framerate); }
+  else if(video_framerate > 100) { video_framerate = 100; PTRACE(1, trace_section << "frame rate changed to " << video_framerate); }
 
   video_bitrate = cfg.GetInteger(RecorderVideoBitrateKey);
   if(video_bitrate == 0) video_bitrate = video_width*video_height*video_framerate/10000;
@@ -743,6 +767,8 @@ void ConferenceRecorder::RecorderVideo(PThread &, INT)
   unsigned delay_us = av_q2d(video_st->codec->time_base)*1000000;
   if(delay_us <= 1000)
     delay_us = 1000000/video_framerate;
+
+  firstFrameSendTime = PTime();
 
   MCUDelay delay;
 
