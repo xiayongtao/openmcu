@@ -2972,6 +2972,16 @@ PString MCUH323Connection::GetEndpointParam(PString param, bool asterisk)
     if(pos != P_MAX_INDEX) url=url.Mid(pos+3);
     url = GetRemoteUserName()+"@"+url;
   }
+  if(connectionType == CONNECTION_TYPE_SIP)
+  {
+    PTRACE(3, trace_section << "MCUH323Connection::GetEndpointParam url=" << url);
+    PINDEX pos = url.Find("@");
+    if(pos != P_MAX_INDEX) 
+		url=url.Mid(pos+1);
+
+	url = PString("sip:")+roomToJoinName+"@"+url;
+	PTRACE(3, trace_section << "MCUH323Connection::GetEndpointParam newurl=" << url << ",param="<<param);
+  }
   return GetSectionParamFromUrl(param, url, asterisk);
 }
 

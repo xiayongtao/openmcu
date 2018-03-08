@@ -235,7 +235,7 @@ int Registrar::OnReceivedSipInvite(const msg_t *msg)
     }
 
     // create MCU sip connection
-    MCUSipConnection *sCon = MCUSipConnection::CreateConnection(DIRECTION_INBOUND, callToken, msg);
+    MCUSipConnection *sCon = MCUSipConnection::CreateConnection(DIRECTION_INBOUND, callToken, msg, username_out);
     if(sCon == NULL)
     {
       response_code = 500; // SIP_500_INTERNAL_SERVER_ERROR

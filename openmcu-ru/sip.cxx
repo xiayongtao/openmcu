@@ -112,7 +112,7 @@ MCUURL_SIP::MCUURL_SIP(const msg_t *msg, Directions dir)
     PString local_hostname = sip->sip_request->rq_url->url_host;
     PString local_port = sip->sip_request->rq_url->url_port;
     if(local_port == "")
-      local_port = "5060";
+      local_port = "5070";
     local_url = url_scheme+":"+local_username+"@"+local_hostname+":"+local_port;
     if(transport != "" && transport != "*")
       local_url += ";transport="+transport;
@@ -245,6 +245,12 @@ BOOL GetSipCapabilityParams(PString capname, PString & name, int & pt, int & rat
   else if(name.Find("729a") != P_MAX_INDEX)    { name = "g729"; fmtp = "annexb=no;"; }
   else if(name.Find("h.263p") != P_MAX_INDEX)  { name = "h263-1998"; }
   else if(name.Find("mp4v-es") != P_MAX_INDEX) { name = "mp4v-es"; }
+  else if(name.Find("aac-latm-44k") != P_MAX_INDEX) { name = "mp4a-latm-44K"; fmtp = "profile-level-id=41;cpresent=0;config=400024203fc0";}
+  else if(name.Find("aac-latm-32k") != P_MAX_INDEX) { name = "mp4a-latm-32K"; fmtp = "profile-level-id=41;cpresent=0;config=400025203fc0";}
+  else if(name.Find("aac-latm-48k") != P_MAX_INDEX) { name = "mp4a-latm-48K"; fmtp = "profile-level-id=41;cpresent=0;config=400023203fc0";}
+  
+  //else if(name.Find("aac-lc") != P_MAX_INDEX) {name = "mpeg4-generic"; fmtp = "profile-level-id=1;mode=AAC-hbr;sizelength=13;indexlength=3;indexdeltalength=3";}
+ // else if(name.Find("aac-generic") != P_MAX_INDEX) {name = "mpeg4-generic"; fmtp = "profile-level-id=1;mode=AAC-hbr;sizelength=13;indexlength=3;indexdeltalength=3";}
   else
   {
     name.Replace("{sw}","",TRUE,0);
@@ -258,8 +264,12 @@ BOOL GetSipCapabilityParams(PString capname, PString & name, int & pt, int & rat
   else if(name == "g722")   { pt = 9; rate = 8000; }
   else if(name == "g728")   { pt = 15; }
   else if(name == "g729")   { pt = 18; }
+  else if(name == "mp4a-latm-44K")   { rate = 44100; pt = 96; }
+  else if(name == "mp4a-latm-32K")   { rate = 32000; pt = 97; }
+  else if(name == "mp4a-latm-48K")   { rate = 48000; pt = 98; }
   else if(name == "h261")   { pt = 31; }
   else if(name == "h263")   { pt = 34; }
+  else if(name == "h264")   { pt = 105; }
   else                      { pt = -1; }
 
   return TRUE;
@@ -484,7 +494,7 @@ MCUSipConnection::~MCUSipConnection()
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-BOOL MCUSipConnection::Init(Directions _direction, const msg_t *msg)
+BOOL MCUSipConnection::Init(Directions _direction, const msg_t *msg, PString username)
 {
   direction = _direction;
 
@@ -514,16 +524,23 @@ BOOL MCUSipConnection::Init(Directions _direction, const msg_t *msg)
   if(CreateDefaultRTPSessions() == FALSE)
     return FALSE;
 
-  // create local capability list
-  CreateLocalSipCaps();
 
   MCUURL contact_url(contact_str);
   MCUURL remote_url(ruri_str);
 
+  //PString local_dname = sip_from.GetDisplayName();
+  //MCUTRACE(1, trace_section << "local_dname: " <<  proxy->roomname  );
+
   // requested room
   requestedRoom = contact_url.GetUserName();
   if(requestedRoom == "")
-    requestedRoom = OpenMCU::Current().GetDefaultRoomName();
+   requestedRoom = OpenMCU::Current().GetDefaultRoomName();
+
+  roomToJoinName = username;
+
+  if(roomToJoinName == "")
+	roomToJoinName = OpenMCU::Current().GetDefaultRoomName();
+
 
   // contact
   contact_url.SetUserName(requestedRoom);
@@ -532,6 +549,11 @@ BOOL MCUSipConnection::Init(Directions _direction, const msg_t *msg)
     contact_url.SetPort(nat_port.AsInteger());
   contact_url.SetTransport(remote_url.GetTransport());
   contact_str = contact_url.GetUrl();
+
+   // create local capability list
+  
+  MCUTRACE(1, trace_section << "username: " <<  roomToJoinName );
+  CreateLocalSipCaps();
 
   // create call leg
   leg = nta_leg_tcreate(sep->GetAgent(), wrap_invite_request_cb, (nta_leg_magic_t *)this,
@@ -563,11 +585,12 @@ BOOL MCUSipConnection::Init(Directions _direction, const msg_t *msg)
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-MCUSipConnection * MCUSipConnection::CreateConnection(Directions _direction, const PString & _callToken, const msg_t *msg)
+MCUSipConnection * MCUSipConnection::CreateConnection(Directions _direction, const PString & _callToken, const msg_t *msg,PString username)
 {
   MCUH323EndPoint *ep = &OpenMCU::Current().GetEndpoint();
   MCUSipConnection *conn = new MCUSipConnection(ep, _callToken);
-  if(!conn->Init(_direction, msg))
+
+  if(!conn->Init(_direction, msg,username))
   {
     delete conn;
     conn = NULL;
@@ -1680,6 +1703,77 @@ void MCUSipConnection::SelectCapability_AC3(SipCapMapType & LocalCaps, SipCapabi
   sc->cap = MCUCapability::Create(capname);
 }
 
+void MCUSipConnection::SelectCapability_AACLD(SipCapMapType & LocalCaps, SipCapability *sc)
+{
+
+  PStringArray keys = sc->fmtp.Tokenise(";");
+  PString capname;
+  if(sc->clock == 90000 && sc->params.AsInteger() <= 1 && FindSipCap(LocalCaps, MEDIA_TYPE_AUDIO, "AAC-LD-96K{sw}"))
+    capname = "AAC-LD-96K{sw}";
+  else if(sc->clock == 90000 && sc->params.AsInteger() == 2 && FindSipCap(LocalCaps, MEDIA_TYPE_AUDIO, "AAC-LD-96K2{sw}"))
+    capname = "AAC-LD-96K2{sw}";
+  else
+    return;
+
+  sc->cap = MCUCapability::Create(capname);
+
+   SipCapability *local_sc = FindSipCap(LocalCaps, MEDIA_TYPE_AUDIO, "AAC-LD-96K{sw}");
+   if(local_sc->video_width) sc->video_width = local_sc->video_width;
+   if(local_sc->video_height) sc->video_height = local_sc->video_height;
+   if(local_sc->video_frame_rate) sc->video_frame_rate = local_sc->video_frame_rate;
+   if(local_sc->bandwidth) sc->bandwidth = local_sc->bandwidth;
+   if(local_sc->clock) sc->clock = local_sc->clock;
+  
+}
+
+void MCUSipConnection::SelectCapability_AACLATM(SipCapMapType & LocalCaps, SipCapability *sc)
+{
+  PStringArray keys = sc->fmtp.Tokenise(";");
+  PString capname;
+  if(sc->clock == 44100 && FindSipCap(LocalCaps, MEDIA_TYPE_AUDIO, "AAC-LATM-44K{sw}"))
+    capname = "AAC-LATM-44K{sw}";
+  else if(sc->clock == 32000 && FindSipCap(LocalCaps, MEDIA_TYPE_AUDIO, "AAC-LATM-32K{sw}"))
+  	capname = "AAC-LATM-32K{sw}";
+  else if(sc->clock == 48000 && FindSipCap(LocalCaps, MEDIA_TYPE_AUDIO, "AAC-LATM-48K{sw}"))
+  	capname = "AAC-LATM-48K{sw}";
+  else
+    return;
+
+  sc->cap = MCUCapability::Create(capname);
+
+   SipCapability *local_sc = FindSipCap(LocalCaps, MEDIA_TYPE_AUDIO, capname);
+   if(local_sc->video_width) sc->video_width = local_sc->video_width;
+   if(local_sc->video_height) sc->video_height = local_sc->video_height;
+   if(local_sc->video_frame_rate) sc->video_frame_rate = local_sc->video_frame_rate;
+   if(local_sc->bandwidth) sc->bandwidth = local_sc->bandwidth;
+   if(local_sc->clock) sc->clock = local_sc->clock;
+  
+}
+
+void MCUSipConnection::SelectCapability_AAC_Generic(SipCapMapType & LocalCaps, SipCapability *sc)
+{
+
+  PStringArray keys = sc->fmtp.Tokenise(";");
+  PString capname;
+  if(sc->clock == 44100 || sc->clock == 44000 || sc->clock == 16000 && sc->params.AsInteger() <= 1 && FindSipCap(LocalCaps, MEDIA_TYPE_AUDIO, "AAC-GENERIC-44K{sw}"))
+    capname = "AAC-GENERIC-44K{sw}";
+  else if(sc->clock == 44100 || sc->clock == 44000 || sc->clock == 16000 && sc->params.AsInteger() == 2 && FindSipCap(LocalCaps, MEDIA_TYPE_AUDIO, "AAC-GENERIC-44K2{sw}"))
+    capname = "AAC-GENERIC-44K2{sw}";
+  else
+    return;
+
+  sc->cap = MCUCapability::Create(capname);
+
+   SipCapability *local_sc = FindSipCap(LocalCaps, MEDIA_TYPE_AUDIO, "AAC-GENERIC-44K{sw}");
+   if(local_sc->video_width) sc->video_width = local_sc->video_width;
+   if(local_sc->video_height) sc->video_height = local_sc->video_height;
+   if(local_sc->video_frame_rate) sc->video_frame_rate = local_sc->video_frame_rate;
+   if(local_sc->bandwidth) sc->bandwidth = local_sc->bandwidth;
+   if(local_sc->clock) sc->clock = local_sc->clock;
+  
+}
+
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 sdp_parser_t *MCUSipConnection::SdpParser(PString sdp_str)
@@ -1732,6 +1826,17 @@ int MCUSipConnection::ProcessSDP(SipCapMapType & LocalCaps, SipCapMapType & Remo
     PTRACE(1, trace_section << "SDP parsing error: sanity check");
     return 415;
   }
+
+  
+  PINDEX Startpos = remote_agent.Find("@");
+  PINDEX endpos = remote_agent.Find("/");
+			
+  if(Startpos > 0 && endpos > 0)
+  {
+	  remote_agent	= remote_agent.Mid(Startpos+1,endpos-Startpos -1);
+	  PTRACE(1, trace_section << "get remote_agent:" << remote_agent);
+  }
+
 
   RemoteCaps.clear();
   for(sdp_session_t *sdp = sess; sdp != NULL; sdp = sdp->sdp_next)
@@ -1978,6 +2083,11 @@ BOOL MCUSipConnection::MergeSipCaps(SipCapMapType & LocalCaps, SipCapMapType & R
       // AC3
       else if(remote_sc->format == "ac3")
       { SelectCapability_AC3(LocalCaps, remote_sc); }
+	  // MP4A-LATM
+	  else if(remote_sc->format.Find("mp4a-latm") != P_MAX_INDEX)
+      { SelectCapability_AACLATM(LocalCaps, remote_sc); }
+	  else if(remote_sc->format == "mpeg4-generic")
+      { SelectCapability_AAC_Generic(LocalCaps, remote_sc); }
     }
     else if(remote_sc->media == MEDIA_TYPE_VIDEO)
     {
@@ -2729,7 +2839,7 @@ BOOL MCUSipEndPoint::SipMakeCall(PString from, PString to, PString & callToken)
     }
 
     // create connection
-    MCUSipConnection *sCon = MCUSipConnection::CreateConnection(DIRECTION_OUTBOUND, callToken, msg);
+    MCUSipConnection *sCon = MCUSipConnection::CreateConnection(DIRECTION_OUTBOUND, callToken, msg, local_user);
     msg_destroy(msg);
 
     if(sCon == NULL)

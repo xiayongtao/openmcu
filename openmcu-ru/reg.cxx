@@ -1179,19 +1179,34 @@ void Registrar::InitAccounts()
     {
       account_type = ACCOUNT_TYPE_SIP;
       username = sect[i].Right(sect[i].GetLength()-sipSectionPrefix.GetLength());
-      gcfg = MCUConfig(sipSectionPrefix+"*");
+	  if(username == "*" || username == "" || username == "empty")
+          gcfg = MCUConfig(sipSectionPrefix+"*");
+	  else
+	  	  gcfg = MCUConfig(sipSectionPrefix+username); 
+
+	  PTRACE(1, trace_section << " Registrar::InitAccounts ,username=" << username << " ,account_type=" << account_type);
     }
     else if(sect[i].Left(h323SectionPrefix.GetLength()) == h323SectionPrefix)
     {
       account_type = ACCOUNT_TYPE_H323;
       username = sect[i].Right(sect[i].GetLength()-h323SectionPrefix.GetLength());
-      gcfg = MCUConfig(h323SectionPrefix+"*");
+      //gcfg = MCUConfig(h323SectionPrefix+"*");
+
+	  if(username == "*" || username == "" || username == "empty")
+          gcfg = MCUConfig(h323SectionPrefix+"*");
+	  else
+	  	  gcfg = MCUConfig(h323SectionPrefix+username); 
     }
     else if(sect[i].Left(h323SectionPrefix.GetLength()) == rtspSectionPrefix)
     {
       account_type = ACCOUNT_TYPE_RTSP;
       username = sect[i].Right(sect[i].GetLength()-rtspSectionPrefix.GetLength());
-      gcfg = MCUConfig(rtspSectionPrefix+"*");
+      //gcfg = MCUConfig(rtspSectionPrefix+"*");
+
+	   if(username == "*" || username == "" || username == "empty")
+          gcfg = MCUConfig(rtspSectionPrefix+"*");
+	  else
+	  	  gcfg = MCUConfig(rtspSectionPrefix+username); 
     }
 
     if(username == "*" || username == "" || username == "empty")

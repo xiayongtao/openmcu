@@ -460,12 +460,17 @@ class TablePConfigPage : public PConfigPage
 
    BOOL FormPost(PHTTPRequest & request, const PStringToString & data, PHTML & msg)
    {
+
+   
      if(msg.IsEmpty())
        msg << "<script>location.href=\"" << request.url.AsString() << "\"</script>";
+
      return TRUE;
    }
    BOOL Post(PHTTPRequest & request, const PStringToString & data, PHTML & reply)
    {
+
+    
      if(sectionPrefix == "")
      {
        if(deleteSection)
@@ -491,8 +496,10 @@ class TablePConfigPage : public PConfigPage
        }
        for(PINDEX i = 0; i < dataDict.GetSize(); i++)
        {
+
          MCUConfig scfg(sectionPrefix + dataDict.GetKeyAt(i));
          PString value = dataDict.GetValueAt(i);
+
          if(value != "")
          {
            PStringArray vArray = value.Tokenise(separator);
@@ -512,12 +519,15 @@ class TablePConfigPage : public PConfigPage
    }
    BOOL OnPOST(PHTTPServer & server, const PURL & url, const PMIMEInfo & info, const PStringToString & data, const PHTTPConnectionInfo & connectInfo)
    {
+
+     PTRACE(1, " #### GetEntityBody:" << connectInfo.GetEntityBody() );
      PStringArray entityData = connectInfo.GetEntityBody().Tokenise("&");
      PString itemId, curKey, saveKey, saveValue;
      PINDEX num = 0;
      for(PINDEX i = 0; i < entityData.GetSize(); i++)
      {
        PString item = PURL::UntranslateString(entityData[i], PURL::QueryTranslation);
+       
        PString key = item.Tokenise("=")[0];
        PString value;
        PINDEX pos = item.Find("=");
@@ -534,6 +544,7 @@ class TablePConfigPage : public PConfigPage
            nextValue = nextItem.Mid(pos+1);
        }
 
+    
        // skip checkbox
        if(value == "FALSE" && nextValue == "TRUE") continue;
        // skip accept button

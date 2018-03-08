@@ -1752,7 +1752,7 @@ SIPPConfigPage::SIPPConfigPage(PHTTPServiceProcess & app,const PString & title, 
     if(url == "") url = "0.0.0.0";
     item += StringItemArray(SipListenerKey, url, 150);
     item += SelectItem(SipListenerKey, transport, "transport=*,transport=udp,transport=tcp,transport=tls");
-    if(url == "0.0.0.0") url += " :5060";
+    if(url == "0.0.0.0") url += " :5070";
     sipListener[i] = "sip:"+url+";"+transport;
   }
   item += EndItemArray();
@@ -1788,6 +1788,8 @@ BOOL SectionPConfigPage::Post(PHTTPRequest & request,
   {
     PString key = list[i].Tokenise("=")[0];
     PString value = list[i].Tokenise("=")[1];
+
+    
     if(key != "" && value != "")
       cfg.SetString(key, value);
   }

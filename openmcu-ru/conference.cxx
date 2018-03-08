@@ -1593,7 +1593,7 @@ MCUJSON * ConferenceMember::AsJSON(int state)
   if(mixer)
   {
   json->Insert("mixerCount", videoMixerList.GetSize());
-  json->Insert("mixer", mixer->GetLayout());
+  json->Insert("layout", mixer->GetLayout());
   json->Insert("winId",mixer->GetPositionNum(id));
   }
 

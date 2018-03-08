@@ -419,6 +419,7 @@ class MCUH323Connection : public H323Connection
     //  This is usually initialized when the call is answered,
     //  before the welcome procedure begins.
     PString requestedRoom;
+	PString roomToJoinName;
 
     // Room the connection is joined to. It is NULL before the
     //  welcome procedure ends, or after the member is disconnected

@@ -243,10 +243,10 @@ class MCUSipConnection : public MCUH323Connection
 {
   protected:
     MCUSipConnection(MCUH323EndPoint *_ep, const PString & _callToken);
-    BOOL Init(Directions _direction, const msg_t *msg);
+    BOOL Init(Directions _direction, const msg_t *msg, PString username);
 
   public:
-    static MCUSipConnection * CreateConnection(Directions _direction, const PString & _callToken, const msg_t *msg);
+    static MCUSipConnection * CreateConnection(Directions _direction, const PString & _callToken, const msg_t *msg, PString username);
     ~MCUSipConnection();
 
     virtual BOOL ClearCall(CallEndReason reason = EndedByLocalUser);
@@ -299,6 +299,9 @@ class MCUSipConnection : public MCUH323Connection
     void SelectCapability_G7221(SipCapMapType & LocalCaps, SipCapability *sc);
     void SelectCapability_G7222(SipCapMapType & LocalCaps, SipCapability *sc);
     void SelectCapability_AC3(SipCapMapType & LocalCaps, SipCapability *sc);
+	void SelectCapability_AACLD(SipCapMapType & LocalCaps, SipCapability *sc);
+	void SelectCapability_AACLATM(SipCapMapType & LocalCaps, SipCapability *sc);
+	void SelectCapability_AAC_Generic(SipCapMapType & LocalCaps, SipCapability *sc);
 
     static int wrap_invite_request_cb(nta_leg_magic_t *context, nta_leg_t *leg, nta_incoming_t *irq, const sip_t *sip)
     { return ((MCUSipConnection *)context)->invite_request_cb(leg, irq, sip); }
@@ -338,6 +341,7 @@ class MCUSipConnection : public MCUH323Connection
 
     PString rtp_proto;
     unsigned remote_bw; // bandwidth to MCU
+    PString remote_agent;
 
     PString key_audio80;
     PString key_audio32;
