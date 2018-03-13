@@ -2298,6 +2298,7 @@ void MCUH323Connection::JoinConference(const PString & roomToJoin)
     return;
 
   // ignore roomToJoin
+  roomToJoinName = roomToJoin;
   //requestedRoom = roomToJoin;
   if(requestedRoom == "")
     requestedRoom = OpenMCU::Current().GetDefaultRoomName();
@@ -2305,6 +2306,8 @@ void MCUH323Connection::JoinConference(const PString & roomToJoin)
   SetRequestedRoom();
   if(requestedRoom == "")
     return;
+
+
 
   // create or join the conference
   ConferenceManager & manager = ((MCUH323EndPoint &)ep).GetConferenceManager();
@@ -2970,7 +2973,9 @@ PString MCUH323Connection::GetEndpointParam(PString param, bool asterisk)
   {
     PINDEX pos = url.Find("ip$");
     if(pos != P_MAX_INDEX) url=url.Mid(pos+3);
-    url = GetRemoteUserName()+"@"+url;
+   // url = GetRemoteUserName()+"@"+url;
+    url = PString("h323:")+roomToJoinName+"@"+url;
+   PTRACE(3, trace_section << "MCUH323Connection::GetEndpointParam newurl=" << url << ",param="<<param);
   }
   if(connectionType == CONNECTION_TYPE_SIP)
   {

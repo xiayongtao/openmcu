@@ -1050,7 +1050,7 @@ void Registrar::InitConfig()
 
   // general parameters
   registrar_domain = cfg.GetString("Registrar domain", PRODUCT_NAME_TEXT);
-  allow_internal_calls = cfg.GetBoolean("Allow internal calls", TRUE);
+  allow_internal_calls = cfg.GetBoolean("Allow internal calls", FALSE);
 
   enable_gatekeeper = cfg.GetBoolean("H.323 gatekeeper enable", TRUE);
   if(enable_gatekeeper && registrarGk == NULL)
